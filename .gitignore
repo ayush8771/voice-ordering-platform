@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment files - never commit real secrets (see docs/SECURITY.md)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test / coverage output
+coverage/
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
