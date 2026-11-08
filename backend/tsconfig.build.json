@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "comment": "Test-support files must not reach the build output; seedMenu depends on the sample dataset, so it is a dev-only script too.",
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/testFakes.ts",
+    "src/services/menu/inMemoryMenuRepository.ts",
+    "src/db/seedMenu.ts",
+    "src/db/testMongoServer.ts"
+  ]
+}

@@ -56,7 +56,11 @@ Needs an unambiguous, ordered ticket with item quantities and customer choices, 
 **Inputs:** Customer microphone permission, selected/supported language, utterance. **Output:** Transcript or understood intent, spoken/displayed response, updated draft cart.
 
 - Customer starts recording explicitly and can stop/cancel; the interface indicates listening, processing, and failure states.
-- Speech recognition and synthesis are behind provider adapters for Gnani Prisma STT and Gnani Timbre TTS. Exact request/response fields, language codes, limits, streaming support, and availability are **unverified** and must be confirmed against provider documentation before integration.
+- Speech recognition and synthesis remain behind Gnani Prisma STT and Gnani Timbre TTS adapters. Exact request/response fields, language codes, limits, streaming support, and availability are **unverified** and must be confirmed against provider documentation before integration.
+- A single shared conversational layer serves QR and kiosk. Sarvam AI Sarvam 105B Conversations (`sarvam-105b-conversations`) is the planned primary LLM behind a provider-neutral adapter; API facts and account setup are documented in [PROVIDERS.md](PROVIDERS.md).
+- Customers may request menu recommendations whenever they ask. Proactive recommendations are limited to one per ordering session, never offered during review, confirmation, or payment, and stop for the session after a customer declines.
+- Any model-proposed action is an untrusted draft suggestion or allowlisted tool request. The backend validates it and remains authoritative; the model cannot bypass menu checks, quote refresh, customer confirmation, or payment rules.
+- LLM/provider/network/credit failures preserve the cart and must leave the complete touch ordering path usable.
 - Transcript-derived actions update only the active draft session and are shown for review.
 - No order is submitted or payment treated as complete based solely on speech.
 - On denied microphone permission, timeout, provider failure, or low-confidence/ambiguous recognition, offer retry and touch entry without losing the draft.
@@ -87,9 +91,9 @@ Needs an unambiguous, ordered ticket with item quantities and customer choices, 
 
 ## 7. MVP scope and milestones
 
-**Must have:** Menu and availability; responsive QR and kiosk ordering; touch fallback; voice adapter boundary; draft/cart and explicit confirmation; server-side price validation; UPI QR instructions or cash-at-counter selection with honest pending/due states; idempotent order creation and pickup token; merchant order queue and status updates; security and critical-flow tests.
+**Must have:** Menu and availability; responsive QR and kiosk ordering; one shared provider-neutral conversational layer; touch fallback; Gnani speech adapter boundaries; draft/cart and explicit confirmation; server-side price validation; UPI QR instructions or cash-at-counter selection with honest pending/due states; idempotent order creation and pickup token; merchant order queue and status updates; security and critical-flow tests.
 
-**Nice to have:** TTS responses; language preference remembered for the active session; simple queue count/estimated wait if a defensible estimate can be computed.
+**Nice to have:** TTS responses; language preference remembered for the active session; policy-limited proactive menu recommendations; simple queue count/estimated wait if a defensible estimate can be computed. Customers can request recommendations whenever they ask.
 
 **Future:** Production payment provider, POS, multi-outlet support, analytics, account-based history, notifications, additional languages and advanced speech tuning.
 
@@ -107,11 +111,11 @@ For the demo, record: successful order completion rate across both channels; dup
 
 ## 9. Constraints, assumptions, open questions
 
-**Confirmed:** React, Node.js, MongoDB; shared backend for kiosk and QR; Kannada/English/Hinglish intent; Gnani Prisma STT and Timbre TTS are intended providers; UPI QR or cash at counter; pickup tokens; merchant/kitchen dashboard; Ayush backend/AI/orders; Anvesh customer/merchant frontend.
+**Confirmed:** React, Node.js, MongoDB; shared backend for kiosk and QR; Kannada/English/Hinglish intent; Gnani Prisma STT and Timbre TTS are intended speech providers; UPI QR or cash at counter; pickup tokens; merchant/kitchen dashboard; Ayush backend/AI/orders; Anvesh customer/merchant frontend. **Planned provider decision:** Sarvam AI Sarvam 105B Conversations is the primary conversational LLM, subject to account setup, credit confirmation, and product evaluation.
 
 **Assumptions:** MVP is a web-based demo for one outlet; one currency (INR); outlet staff can confirm cash and UPI receipt manually; QR opens a public outlet-scoped session. Validate before treating these as final.
 
-**Open:** Exact UI framework/tooling and repository structure; whether Hinglish means Hindi-English code-switching only; Gnani API credentials/contracts, supported language identifiers, retention terms, and audio handling; payment QR source and how trusted callbacks would be authenticated; staff authentication and roles; hosting, TLS, domain, deployment and backups; tax/charge rules; token reset/uniqueness window; menu customisation model; target hardware/network; privacy notice, audio retention and consent; outlet pilot and measurable targets.
+**Open:** Exact UI framework/tooling and repository structure; whether Hinglish means Hindi-English code-switching only; Gnani API credentials/contracts, supported language identifiers, retention terms, and audio handling; Sarvam dashboard access, whether the advertised ₹100 signup credit is granted to Ayush, actual remaining balance, and a spending cap; Sarvam quality for this domain/languages and rate-limit/latency suitability; payment QR source and how trusted callbacks would be authenticated; staff authentication and roles; hosting, TLS, domain, deployment and backups; tax/charge rules; token reset/uniqueness window; menu customisation model; target hardware/network; privacy notice, audio retention and consent; outlet pilot and measurable targets.
 
 ## 10. Definition of done
 

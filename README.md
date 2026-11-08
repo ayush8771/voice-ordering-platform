@@ -2,7 +2,7 @@
 
 A project to help busy Indian food stalls and independent quick-service outlets manage walk-up orders through a voice-enabled kiosk or QR-based mobile experience. Customers review and confirm an order before it reaches a shared backend and merchant/kitchen dashboard.
 
-> **Project status:** Documentation and MVP planning. This repository currently contains the product documentation pack; application code, setup commands, and deployment instructions have not yet been added.
+> **Project status:** Early implementation. The documentation pack is complete; the repository also contains a TypeScript monorepo foundation (health API, config, error envelope, shared contracts, React shell) and the Sarvam conversational LLM provider adapter. Ordering, menu, cart, order and conversation services are not implemented. Deployment is not addressed.
 
 ## The problem
 
@@ -15,7 +15,7 @@ The MVP is intended for independent Indian takeaway outlets and small QSRs. It s
 - **Voice-enabled kiosk:** A restaurant-provided tablet or touchscreen with voice and touch ordering.
 - **QR mobile ordering:** A customer scans an outlet QR code and orders from a mobile web experience, using voice or touch.
 
-The planned language set is Kannada, English, and Hinglish (Hindi-English code-switching). Gnani Prisma is the intended speech-to-text provider and Gnani Timbre the intended text-to-speech provider. Their API details and capabilities still need verification before implementation.
+The planned language set is Kannada, English, and Hinglish (Hindi-English code-switching). Gnani Prisma STT and Gnani Timbre TTS remain the intended speech providers. Sarvam AI Sarvam 105B Conversations (`sarvam-105b-conversations`) is the planned primary conversational LLM. Each provider sits behind an adapter; see [provider notes](docs/PROVIDERS.md) for verified Sarvam facts and unresolved setup items. Sarvam documents Kannada, Hindi, and English coverage, including romanized and code-mixed text, but application quality for this menu domain still needs evaluation.
 
 ## MVP journey
 
@@ -38,6 +38,7 @@ Payment status is separate from kitchen status. A QR display, customer claim, or
 | Data store | MongoDB | Confirmed direction |
 | Speech recognition | Gnani Prisma STT | Intended provider; API unverified |
 | Speech synthesis | Gnani Timbre TTS | Intended provider; API unverified |
+| Conversational LLM | Sarvam AI Sarvam 105B Conversations | Planned primary; API documented, account and credits unconfirmed |
 | Ordering channels | Kiosk and QR mobile web | Confirmed product direction |
 | Payments | UPI QR instructions or cash at counter | MVP choices; no production payment integration selected |
 
@@ -62,65 +63,42 @@ Start with the [Product Requirements Document](docs/PRD.md), then use the suppor
 - [AI agent instructions](docs/AGENTS.md)
 - [Customer and merchant UX flows](docs/UX_FLOWS.md)
 - [Provisional API contract](docs/API.md)
+- [Provider configuration and verification](docs/PROVIDERS.md)
+- [Internal conversation contract and provider notes](docs/API.md#shared-conversational-service-contract-provisional-provider-neutral)
 - [Claude Code instructions](CLAUDE.md)
 
 The API routes, payloads, and data schemas are proposals for implementation planning. Confirm them against the actual repository and resolve open decisions before relying on them.
 
-## Repository structure
-
-```
-backend/     Node.js + Express API, order processing, provider adapters
-frontend/    React clients: customer QR, customer kiosk, merchant dashboard
-shared/      API contracts and domain vocabulary used by both sides
-docs/        Product documentation (source of truth)
-```
-
-`backend/` and `frontend/` already existed in the repository, so the foundation
-uses them rather than introducing a different layout. The illustrative layout in
-[ARCHITECTURE.md](docs/ARCHITECTURE.md#7-project-structure-guidance) is mapped
-onto them: routes, services, models and providers live under `backend/src/`.
-
-## Setup and commands
-
-Requires Node.js >= 20.19 (developed on 24.11) and npm 11. MongoDB is optional
-for foundation work; the API starts and reports it as `unconfigured`.
-
-```bash
-npm install                       # install all workspaces
-cp .env.example backend/.env      # then fill in local values
-npm run build --workspace shared  # build shared contracts first
-npm run dev                       # backend :4000 and frontend :5173
-```
-
-| Command | Purpose |
-|---|---|
-| `npm run dev` | Run backend and frontend together |
-| `npm run dev:backend` / `npm run dev:frontend` | Run one side only |
-| `npm run build` | Build shared, backend, then frontend |
-| `npm run typecheck` | `tsc --noEmit` across all workspaces |
-| `npm run lint` | ESLint |
-| `npm run format` | Prettier check (`npx prettier --write .` to fix) |
-| `npm test` | Vitest (backend) |
-
-Frontend surfaces during foundation work: `/` customer QR, `/#/kiosk` customer
-kiosk, `/#/merchant` merchant dashboard. The Vite dev server proxies `/api` to
-the backend.
-
 ## Current implementation status
 
-The foundation is in place: workspace tooling, a typed shared contract package,
-an Express API with request correlation IDs and the documented error envelope, a
-`GET /api/v1/health` probe, an optional MongoDB connection, and React client
-shells that verify backend connectivity.
+npm workspaces: `shared`, `backend`, `frontend`. Requires Node >= 20.19.
 
-**No product features are implemented.** There is no menu, cart, quote, order,
-token, voice integration, staff authentication or payment handling yet. The
-`backend/src/services`, `models` and `providers` directories are placeholders.
+| Command (repository root) | Scope |
+|---|---|
+| `npm install` | Install all workspaces |
+| `npm run dev` | Backend API and frontend dev server |
+| `npm test` | Vitest in `shared` and `backend`. The `*.integration.test.ts` files start a real `mongod` through `mongodb-memory-server`; the first run on a machine downloads that binary (several hundred MB, a few minutes) and caches it |
+| `npm run typecheck` | Strict `tsc --noEmit` across workspaces |
+| `npm run lint` / `npm run format` | ESLint / Prettier check |
+| `npm run build` | Shared contracts, backend compile, frontend production build |
+| `npm run seed --workspace backend` | Upsert the synthetic demo menu into a local MongoDB |
+
+**Implemented:** `GET /api/v1/health`, `GET /api/v1/outlets/:outletId/menu`, `POST /api/v1/ordering-sessions`, `POST /api/v1/quotes`; environment validation, correlation IDs and the shared error envelope; shared contract types for menu, session and quote; three frontend surfaces in one app switched by URL hash; the Sarvam LLM provider adapter in `backend/src/providers/sarvam` behind the provider-neutral interface in `backend/src/providers/llm`; the shared conversational service in `backend/src/services/conversation`; and server-authoritative menu and pricing in `backend/src/services/{menu,quote,sessions}`.
+
+Customer endpoints authenticate with `Authorization: Bearer <sessionId>` from `POST /api/v1/ordering-sessions`, which expires on a 10-minute sliding idle window or a 30-minute absolute cap, whichever comes first. Three contract decisions still need Ayush/Anvesh sign-off and are marked `NEEDS JOINT AGREEMENT` in [docs/API.md](docs/API.md): menu categories, that session transport, and the 422-versus-409 split for invalid versus unavailable selections.
+
+**Not implemented:** order creation, payment, pickup tokens, merchant dashboard actions and menu editing, staff authentication, speech (STT/TTS), and rate limiting. Ordering sessions and issued quotes are held in memory, not MongoDB. The conversation service has no HTTP route yet: its request/result shape is an API contract that Ayush and Anvesh review together before it is exposed.
+
+Copy `.env.example` to `backend/.env` for local development; `backend/.env.example` lists the backend-only provider placeholders. `backend/.env` is loaded automatically by `npm run dev --workspace backend`, `npm start --workspace backend`, and `npm run seed --workspace backend` (shell/deployment environment variables still take precedence over it); nothing else reads it. For local MongoDB, set `MONGODB_URI=mongodb://127.0.0.1:27017` and `MONGODB_DB_NAME=voice_ordering_dev` in `backend/.env`. Do not publish secrets; keep `.env.example` to placeholder variable names only. No live Sarvam request has been made from this repository, and its tests consume no provider credits.
+
+The MVP should be considered ready for demonstration only when its critical flow works across kiosk and QR channels, backend prices and order state are authoritative, duplicate confirmations are handled idempotently, sessions are isolated, and payment status cannot be asserted by the customer client.
 
 ## Open decisions
 
 - Exact React/Node framework, language (JavaScript or TypeScript), and repository layout.
 - Gnani API contracts, supported language identifiers, audio formats, limits, and retention behavior.
+- Sarvam dashboard access, actual introductory credit balance, cost budget and account rate limits.
+- Evaluation of Sarvam Conversations quality for Kannada, English, and Hindi-English code-switching in restaurant ordering.
 - Staff authentication and authorization approach.
 - Payment QR source and any trusted callback integration.
 - Hosting, TLS, deployment, backups, logging, and retention policies.

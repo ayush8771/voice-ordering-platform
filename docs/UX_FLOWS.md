@@ -1,6 +1,6 @@
 # UX Flows
 
-These flows describe the MVP target. Provider-specific voice behavior and final UI details remain subject to validation. Shared lifecycle: customer order entry → editable review → explicit confirmation → payment choice/status → pickup token → kitchen preparation → ready/collection.
+These flows describe the MVP target. Provider-specific voice behavior and final UI details remain subject to validation. QR and kiosk use the same conversational layer and backend ordering rules. Shared lifecycle: customer order entry → editable review → explicit confirmation → payment choice/status → pickup token → kitchen preparation → ready/collection.
 
 ## Flow 1 - Start ordering (QR or kiosk)
 
@@ -14,12 +14,14 @@ These flows describe the MVP target. Provider-specific voice behavior and final 
 ## Flow 2 - Browse and build cart
 
 1. Customer browses categories/items or taps microphone and grants permission.
-2. For voice: show listening/processing state, send audio through verified provider adapter, interpret result into a draft action.
+2. For voice: show listening/processing state, send audio through the Gnani STT adapter, then pass normalized text and session context through the shared conversational service and Sarvam LLM adapter into a draft action.
 3. Show recognized item/quantity/options in the cart; ask a single clarification for ambiguity or offer touch selection.
 4. Customer edits/removes items; client requests server quote.
 5. Server validates active items/options and returns authoritative prices/total.
 
 **Empty:** Suggest categories and explain voice/touch choices. **Voice denied/fails:** Preserve cart and offer touch input/retry. **Item unavailable:** Explain and remove/replace before checkout. No spoken action submits an order.
+
+Customers may ask for recommendations at any point in the flow. Proactive recommendations are limited to one per session, are never offered during review, confirmation, or payment, and stop after a decline. All suggested items/options are revalidated against the current backend menu and quoted by the server.
 
 ## Flow 3 - Review, confirm, and choose payment
 

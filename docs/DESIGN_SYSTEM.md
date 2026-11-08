@@ -10,7 +10,7 @@ This is a neutral starting system, not a final brand identity. Avoid stereotypes
 
 ## 2. Brand and voice
 
-Product name and logo are undecided. Use a text wordmark placeholder until chosen. UI copy is concise, respectful, and non-judgmental. Voice prompts should say what was understood, ask one clarification at a time, and never imply an order or payment is complete before the backend confirms it.
+Product name and logo are undecided. Use a text wordmark placeholder until chosen. UI copy is concise, respectful, and non-judgmental. Voice prompts should say what was understood, ask one clarification at a time, and never imply an order or payment is complete before the backend confirms it. Customers can request menu recommendations whenever they ask. An unsolicited recommendation may appear only once per session, never during review, confirmation, or payment, and must stop after a decline.
 
 ## 3. Color tokens
 

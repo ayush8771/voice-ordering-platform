@@ -27,6 +27,78 @@ export class ApiError extends Error {
   static validation(message: string, details?: readonly unknown[]): ApiError {
     return new ApiError(400, 'VALIDATION_ERROR', message, details);
   }
+
+  /**
+   * A syntactically valid request whose selection cannot be priced - an unknown
+   * item or option (docs/API.md quote errors).
+   */
+  static unprocessable(message: string, details?: readonly unknown[]): ApiError {
+    return new ApiError(422, 'VALIDATION_ERROR', message, details);
+  }
+
+  /** Current menu state conflicts with the request: unavailable or changed. */
+  static conflict(message: string, details?: readonly unknown[]): ApiError {
+    return new ApiError(409, 'CONFLICT', message, details);
+  }
+
+  /** Missing or unusable ordering session. */
+  static unauthorized(message = 'A valid ordering session is required'): ApiError {
+    return new ApiError(401, 'UNAUTHORIZED', message);
+  }
+
+  /** The session is valid but scoped to a different outlet or resource. */
+  static forbidden(message = 'This session cannot access that resource'): ApiError {
+    return new ApiError(403, 'FORBIDDEN', message);
+  }
+
+  /** A dependency the request needs is unavailable; the caller may retry. */
+  static unavailable(
+    message = 'Service temporarily unavailable. Please retry.',
+  ): ApiError {
+    return new ApiError(503, 'SERVICE_UNAVAILABLE', message);
+  }
+}
+
+/**
+ * Client-safe messages for the body-parser failures `express.json()` raises
+ * before any route runs.
+ *
+ * Without this mapping they fall through to the 500 branch, which is wrong on
+ * two counts: unparseable or oversized input is the caller's fault, not a
+ * server fault (docs/API.md `400` invalid schema), and treating it as
+ * unexpected lets any client fill the error log with stack traces.
+ *
+ * The parser's own message is deliberately discarded. A failed parse carries
+ * the raw request body on `err.body`, and `err.message` can quote part of it,
+ * so echoing either would reflect unvalidated input back to the caller.
+ *
+ * `413` keeps the existing `VALIDATION_ERROR` code rather than introducing a
+ * new one: the status already carries the specific meaning, and the documented
+ * 400/409/422 distinction stays exactly as it is.
+ */
+const REQUEST_BODY_ERRORS: Readonly<Record<string, string>> = {
+  'entity.parse.failed': 'Request body is not valid JSON',
+  'entity.too.large': 'Request body is too large',
+  'encoding.unsupported': 'Request body encoding is not supported',
+  'charset.unsupported': 'Request body charset is not supported',
+  'parameters.too.many': 'Request body has too many parameters',
+  'request.aborted': 'Request body was not fully received',
+};
+
+/** Recognises a body-parser rejection and restates it as a client error. */
+function asRequestBodyError(err: unknown): ApiError | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+
+  const candidate = err as { type?: unknown; status?: unknown; statusCode?: unknown };
+  const type = typeof candidate.type === 'string' ? candidate.type : undefined;
+  const message = type === undefined ? undefined : REQUEST_BODY_ERRORS[type];
+  if (message === undefined) return undefined;
+
+  const raw =
+    typeof candidate.status === 'number' ? candidate.status : candidate.statusCode;
+  const status = typeof raw === 'number' && raw >= 400 && raw <= 499 ? raw : 400;
+
+  return new ApiError(status, 'VALIDATION_ERROR', message);
 }
 
 function buildBody(
@@ -58,10 +130,11 @@ export const notFoundHandler: RequestHandler = (req, res) => {
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (res.headersSent) return;
 
-  if (err instanceof ApiError) {
+  const known = err instanceof ApiError ? err : asRequestBodyError(err);
+  if (known !== undefined) {
     res
-      .status(err.status)
-      .json(buildBody(err.code, err.message, req.requestId, err.details));
+      .status(known.status)
+      .json(buildBody(known.code, known.message, req.requestId, known.details));
     return;
   }
 

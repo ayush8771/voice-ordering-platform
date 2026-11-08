@@ -27,5 +27,6 @@ Comments explain non-obvious intent, constraints, and tradeoffs, not the syntax.
 - Backend recalculates price and validates every order against current menu state.
 - Speech-derived content stays a draft until customer confirmation.
 - Payment and kitchen states are separate fields and transitions.
-- Never infer provider capabilities from product names; verify actual Gnani API docs before coding.
+- Keep Sarvam-specific request/response fields inside its LLM adapter; shared service contracts must remain provider-neutral.
+- Never infer provider capabilities from product names; verify official Sarvam/Gnani API docs before coding or updating provider assumptions.
 - Update relevant docs with intentional behavior/contract changes.

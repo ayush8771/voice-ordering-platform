@@ -5,6 +5,34 @@ import type { AppConfig } from './config/env.js';
 import { requestId } from './middleware/requestId.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { createHealthRouter } from './routes/health.js';
+import { createMenuRouter } from './routes/menu.js';
+import { createOrderingSessionRouter } from './routes/orderingSessions.js';
+import { createQuoteRouter } from './routes/quotes.js';
+import { getDb } from './db/mongo.js';
+import {
+  createLazyMongoMenuRepository,
+  createMenuService,
+  type MenuService,
+} from './services/menu/index.js';
+import {
+  createQuoteService,
+  createQuoteStore,
+  type QuoteService,
+} from './services/quote/index.js';
+import {
+  createOrderingSessionService,
+  type OrderingSessionService,
+} from './services/sessions/orderingSessionService.js';
+
+/**
+ * Service overrides. Tests inject in-memory implementations; production leaves
+ * them unset and gets the MongoDB-backed defaults.
+ */
+export interface AppDeps {
+  readonly menuService?: MenuService;
+  readonly quoteService?: QuoteService;
+  readonly orderingSessions?: OrderingSessionService;
+}
 
 /**
  * Builds the Express application.
@@ -13,8 +41,15 @@ import { createHealthRouter } from './routes/health.js';
  * without binding a port. Routes handle transport concerns only; domain rules
  * belong in services (docs/ARCHITECTURE.md section 5).
  */
-export function createApp(config: AppConfig): Express {
+export function createApp(config: AppConfig, deps: AppDeps = {}): Express {
   const app = express();
+
+  const menuService =
+    deps.menuService ?? createMenuService(createLazyMongoMenuRepository(getDb));
+  const orderingSessions = deps.orderingSessions ?? createOrderingSessionService();
+  const quoteService =
+    deps.quoteService ??
+    createQuoteService({ menuService, quoteStore: createQuoteStore() });
 
   // Do not advertise the server implementation.
   app.disable('x-powered-by');
@@ -32,6 +67,9 @@ export function createApp(config: AppConfig): Express {
   app.use(express.json({ limit: '32kb' }));
 
   app.use(API_BASE_PATH, createHealthRouter(config));
+  app.use(API_BASE_PATH, createMenuRouter(menuService));
+  app.use(API_BASE_PATH, createOrderingSessionRouter(orderingSessions, menuService));
+  app.use(API_BASE_PATH, createQuoteRouter(quoteService, orderingSessions));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

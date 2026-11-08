@@ -6,6 +6,32 @@
  * section 3) - only whether something is configured.
  */
 
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const BACKEND_ENV_FILE = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '.env',
+);
+
+/**
+ * Loads `backend/.env` into `process.env` for local development. Variables
+ * already set in the shell or deployment environment are left untouched
+ * (Node's own semantics). A no-op when the file is absent, e.g. in CI or
+ * production, where real secret storage is used instead.
+ *
+ * Call once, before `loadConfig()`, from each process entry point
+ * (`index.ts`, `seedMenu.ts`) - not from `loadConfig()` itself, which stays a
+ * pure parse of whatever `env` it is given so it remains easy to test.
+ */
+export function loadEnvFile(): void {
+  if (!existsSync(BACKEND_ENV_FILE)) return;
+  process.loadEnvFile(BACKEND_ENV_FILE);
+}
+
 export interface AppConfig {
   readonly port: number;
   readonly nodeEnv: 'development' | 'test' | 'production';

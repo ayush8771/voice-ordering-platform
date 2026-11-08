@@ -1,9 +1,10 @@
-import { loadConfig } from './config/env.js';
+import { loadConfig, loadEnvFile } from './config/env.js';
 import { createApp } from './app.js';
 import { connectToMongo, disconnectFromMongo } from './db/mongo.js';
 
 /** Server entry point: load config, connect dependencies, listen, shut down cleanly. */
 async function main(): Promise<void> {
+  loadEnvFile();
   const config = loadConfig();
 
   try {
