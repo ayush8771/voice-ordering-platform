@@ -31,6 +31,7 @@ function order(
     orderStatus: partial.orderStatus,
     paymentMethod: partial.paymentMethod,
     paymentStatus: partial.paymentStatus,
+    checkoutLanguage: 'en',
     items: partial.items,
     subtotalMinor: total,
     totalMinor: total,
@@ -43,6 +44,9 @@ function order(
 const dosa = (quantity: number, optionIds: readonly string[] = []) => ({
   menuItemId: 'demo-dosa',
   nameAtOrder: 'Masala Dosa',
+  // Sample data is English-only: the localized snapshot equals the canonical
+  // name, which is also what the API returns for an untranslated item.
+  displayNameAtOrder: 'Masala Dosa',
   quantity,
   optionIds,
   unitPriceMinor: 8000,
@@ -51,6 +55,7 @@ const dosa = (quantity: number, optionIds: readonly string[] = []) => ({
 const idli = (quantity: number) => ({
   menuItemId: 'demo-idli',
   nameAtOrder: 'Idli Vada',
+  displayNameAtOrder: 'Idli Vada',
   quantity,
   optionIds: [],
   unitPriceMinor: 6000,
@@ -59,6 +64,7 @@ const idli = (quantity: number) => ({
 const coffee = (quantity: number) => ({
   menuItemId: 'demo-coffee',
   nameAtOrder: 'Filter Coffee',
+  displayNameAtOrder: 'Filter Coffee',
   quantity,
   optionIds: [],
   unitPriceMinor: 3000,

@@ -138,6 +138,7 @@ describe('POST /api/v1/orders', () => {
       {
         menuItemId: 'item-masala-dosa',
         nameAtOrder: 'Masala Dosa',
+        displayNameAtOrder: 'Masala Dosa',
         quantity: 2,
         optionIds: [],
         unitPriceMinor: 8000,

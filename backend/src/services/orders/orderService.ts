@@ -30,6 +30,7 @@
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
+  DEFAULT_LANGUAGE,
   MAX_IDEMPOTENCY_KEY_CHARS,
   PAYMENT_METHODS,
   type Channel,
@@ -42,6 +43,7 @@ import {
 import { ApiError } from '../../middleware/errors.js';
 import { addMinor, multiplyMinor } from '../../models/money.js';
 import type { OrderDoc, OrderItemDoc } from '../../models/orders.js';
+import { itemName } from '../menu/localize.js';
 import type { MenuService } from '../menu/menuService.js';
 import { assertSelection } from '../quote/pricing.js';
 import type { QuoteStore } from '../quote/quoteStore.js';
@@ -155,9 +157,13 @@ function toResponse(doc: OrderDoc): OrderResponse {
     orderStatus: doc.orderStatus,
     paymentMethod: doc.paymentMethod,
     paymentStatus: doc.paymentStatus,
+    checkoutLanguage: doc.checkoutLanguage ?? DEFAULT_LANGUAGE,
     items: doc.items.map((item) => ({
       menuItemId: item.menuItemId,
       nameAtOrder: item.nameAtOrder,
+      // An order stored before this milestone has no localized snapshot, and
+      // the English name is exactly what it was displayed as.
+      displayNameAtOrder: item.displayNameAtOrder ?? item.nameAtOrder,
       quantity: item.quantity,
       optionIds: item.optionIds,
       unitPriceMinor: item.unitPriceMinor,
@@ -208,6 +214,11 @@ export function createOrderService(deps: OrderServiceDeps): OrderService {
 
       // Re-priced from the live menu rather than trusted from the quote: an
       // unknown item is 422 and an unavailable one 409, exactly as on a quote.
+      // The language the customer reviewed in. Taken from the quote, not from
+      // this request: the confirming call must not be able to restate what the
+      // customer saw.
+      const checkoutLanguage = quote.language;
+
       const items: OrderItemDoc[] = quote.items.map((line) => {
         const { item, unitPriceMinor } = assertSelection(snapshot, {
           menuItemId: line.menuItemId,
@@ -216,6 +227,7 @@ export function createOrderService(deps: OrderServiceDeps): OrderService {
         return {
           menuItemId: item.publicId,
           nameAtOrder: item.name,
+          displayNameAtOrder: itemName(item, checkoutLanguage),
           quantity: line.quantity,
           optionIds: line.optionIds,
           unitPriceMinor,
@@ -269,6 +281,7 @@ export function createOrderService(deps: OrderServiceDeps): OrderService {
         requestFingerprint,
         quoteId: request.quoteId,
         menuVersion: snapshot.menuVersion,
+        checkoutLanguage,
         createdAt,
         updatedAt: createdAt,
         statusHistory: [{ status: 'accepted', actorKind: 'customer', at: createdAt }],

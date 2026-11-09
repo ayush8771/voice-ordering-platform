@@ -72,6 +72,51 @@ describe('GET /api/v1/outlets/:outletId/menu', () => {
     }
   });
 
+  it('serves the requested language and echoes it', async () => {
+    const response = await request(app()).get(
+      '/api/v1/outlets/demo-outlet/menu?lang=kn',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.language).toBe('kn');
+    expect(response.body.contentVersion).toEqual(expect.any(String));
+    expect(
+      response.body.items.find((item: { id: string }) => item.id === 'item-masala-dosa')
+        .name,
+    ).toBe('ಮಸಾಲೆ ದೋಸೆ');
+  });
+
+  it('serves English, unchanged, when no language is asked for', async () => {
+    const response = await request(app()).get('/api/v1/outlets/demo-outlet/menu');
+
+    expect(response.body.language).toBe('en');
+    expect(
+      response.body.items.find((item: { id: string }) => item.id === 'item-masala-dosa')
+        .name,
+    ).toBe('Masala Dosa');
+  });
+
+  it('keeps menuVersion the same across languages', async () => {
+    const server = app();
+    const en = await request(server).get('/api/v1/outlets/demo-outlet/menu');
+    const hi = await request(server).get('/api/v1/outlets/demo-outlet/menu?lang=hi');
+
+    expect(hi.body.menuVersion).toBe(en.body.menuVersion);
+    expect(hi.body.contentVersion).not.toBe(en.body.contentVersion);
+  });
+
+  it('rejects an unsupported or repeated language with 400', async () => {
+    const server = app();
+
+    for (const query of ['lang=ta', 'lang=', 'lang=EN', 'lang=kn&lang=hi']) {
+      const response = await request(server).get(
+        `/api/v1/outlets/demo-outlet/menu?${query}`,
+      );
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    }
+  });
+
   it('returns 503 when the database is unreachable', async () => {
     // Default wiring resolves MongoDB lazily and nothing is connected in tests.
     const response = await request(createApp(loadConfig({ NODE_ENV: 'test' }))).get(
@@ -215,6 +260,7 @@ describe('POST /api/v1/quotes', () => {
     expect(response.body.items[0]).toEqual({
       menuItemId: 'item-masala-dosa',
       name: 'Masala Dosa',
+      displayName: 'Masala Dosa',
       quantity: 2,
       optionIds: ['opt-ghee'],
       unitPriceMinor: 10500,
@@ -224,6 +270,40 @@ describe('POST /api/v1/quotes', () => {
     expect(response.body.totalMinor).toBe(21000);
     expect(response.body.currency).toBe('INR');
     expect(response.body.quoteId).toEqual(expect.any(String));
+  });
+
+  it('records the review language and localizes the display names', async () => {
+    const server = app();
+    const sessionId = await session(server);
+
+    const response = await request(server)
+      .post('/api/v1/quotes?lang=kn')
+      .set('Authorization', `Bearer ${sessionId}`)
+      .send({
+        outletId: 'demo-outlet',
+        items: [{ menuItemId: 'item-idli', quantity: 1 }],
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.language).toBe('kn');
+    expect(response.body.items[0].name).toBe('Idli');
+    expect(response.body.items[0].displayName).toBe('ಇಡ್ಲಿ');
+  });
+
+  it('rejects an unsupported language on a quote with 400', async () => {
+    const server = app();
+    const sessionId = await session(server);
+
+    const response = await request(server)
+      .post('/api/v1/quotes?lang=ta')
+      .set('Authorization', `Bearer ${sessionId}`)
+      .send({
+        outletId: 'demo-outlet',
+        items: [{ menuItemId: 'item-idli', quantity: 1 }],
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('rejects a request with no session', async () => {

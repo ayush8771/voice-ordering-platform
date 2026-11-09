@@ -53,6 +53,9 @@ export const SAMPLE_MENU: MenuDataset = {
     {
       publicId: 'demo-outlet',
       name: 'Demo Tiffin Centre',
+      // Deliberately partial: no Hindi outlet name, so the sample data
+      // exercises per-field fallback rather than only the translated path.
+      translations: { kn: { name: 'ಡೆಮೊ ಟಿಫಿನ್ ಸೆಂಟರ್' } },
       slug: 'demo-tiffin-centre',
       timezone: 'Asia/Kolkata',
       currency: 'INR',
@@ -80,6 +83,7 @@ export const SAMPLE_MENU: MenuDataset = {
       publicId: 'cat-tiffin',
       outletId: 'demo-outlet',
       name: 'Tiffin',
+      translations: { kn: { name: 'ಟಿಫಿನ್' }, hi: { name: 'नाश्ता' } },
       sortOrder: 1,
       active: true,
     },
@@ -87,6 +91,7 @@ export const SAMPLE_MENU: MenuDataset = {
       publicId: 'cat-drinks',
       outletId: 'demo-outlet',
       name: 'Drinks',
+      translations: { kn: { name: 'ಪಾನೀಯಗಳು' }, hi: { name: 'पेय' } },
       sortOrder: 2,
       active: true,
     },
@@ -104,6 +109,15 @@ export const SAMPLE_MENU: MenuDataset = {
       outletId: 'demo-outlet',
       name: 'Masala Dosa',
       description: 'Crisp dosa with spiced potato filling',
+      // Kannada carries both fields; Hindi carries only the name, so a Hindi
+      // menu shows the Hindi name beside the English description.
+      translations: {
+        kn: {
+          name: 'ಮಸಾಲೆ ದೋಸೆ',
+          description: 'ಮಸಾಲೆ ಆಲೂಗಡ್ಡೆ ತುಂಬಿದ ಗರಿಗರಿ ದೋಸೆ',
+        },
+        hi: { name: 'मसाला डोसा' },
+      },
       priceMinor: 8000,
       currency: 'INR',
       active: true,
@@ -113,6 +127,10 @@ export const SAMPLE_MENU: MenuDataset = {
         {
           publicId: 'opt-extra-chutney',
           label: 'Extra chutney',
+          translations: {
+            kn: { label: 'ಹೆಚ್ಚುವರಿ ಚಟ್ನಿ' },
+            hi: { label: 'अतिरिक्त चटनी' },
+          },
           priceDeltaMinor: 1000,
           active: true,
         },
@@ -134,6 +152,7 @@ export const SAMPLE_MENU: MenuDataset = {
       publicId: 'item-idli',
       outletId: 'demo-outlet',
       name: 'Idli',
+      translations: { kn: { name: 'ಇಡ್ಲಿ' }, hi: { name: 'इडली' } },
       priceMinor: 4000,
       currency: 'INR',
       active: true,
@@ -167,6 +186,9 @@ export const SAMPLE_MENU: MenuDataset = {
       publicId: 'item-filter-coffee',
       outletId: 'demo-outlet',
       name: 'Filter Coffee',
+      // Untranslated in Hindi, and blank in Kannada's description slot is not
+      // modelled here: a blank translation is covered by the unit tests.
+      translations: { kn: { name: 'ಫಿಲ್ಟರ್ ಕಾಫಿ' } },
       priceMinor: 3000,
       currency: 'INR',
       active: true,

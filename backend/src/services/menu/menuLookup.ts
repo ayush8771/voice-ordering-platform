@@ -11,18 +11,25 @@
  * - unavailable items are returned with `available: false` rather than hidden,
  *   so the conversation service can say "sold out" instead of "no such item";
  * - only active options are exposed, so the model cannot propose an option the
- *   quote service would then reject.
+ *   quote service would then reject;
+ * - matching is multilingual: an item is found by its Kannada or Hindi name as
+ *   well as by its canonical English one, and the summary carries the name in
+ *   the turn's language. Without this, a Kannada utterance could never resolve
+ *   to a menu item and the whole multilingual path would fall back to touch.
  */
 
+import { DEFAULT_LANGUAGE, type Language } from '@vop/shared';
 import type { MenuItemSummary, MenuLookupPort } from '../conversation/menuPort.js';
 import { ApiError } from '../../middleware/errors.js';
 import type { MenuItemDoc } from '../../models/menu.js';
+import { itemName } from './localize.js';
 import type { MenuService } from './menuService.js';
 
-function toSummary(item: MenuItemDoc): MenuItemSummary {
+function toSummary(item: MenuItemDoc, language: Language): MenuItemSummary {
   return {
     id: item.publicId,
-    name: item.name,
+    // The customer's language, so the model repeats back the words they used.
+    name: itemName(item, language),
     available: item.active,
     priceMinor: item.priceMinor,
     optionIds: (item.options ?? [])
@@ -53,7 +60,7 @@ export function createMenuLookup(menuService: MenuService): MenuLookupPort {
   }
 
   return {
-    async search(outletId, query, limit) {
+    async search(outletId, query, limit, language = DEFAULT_LANGUAGE) {
       const needle = normalize(query);
       if (needle === '') return [];
 
@@ -67,10 +74,21 @@ export function createMenuLookup(menuService: MenuService): MenuLookupPort {
       const partial: MenuItemSummary[] = [];
 
       for (const item of all) {
-        const name = normalize(item.name);
-        if (name === needle) exact.push(toSummary(item));
-        else if (name.startsWith(needle)) prefix.push(toSummary(item));
-        else if (name.includes(needle)) partial.push(toSummary(item));
+        // Both names are matched, not just the localized one: a Kannada or
+        // Hindi session still carries English item names in it ("two dosa"),
+        // and refusing them would make code-switched speech unresolvable.
+        const names = new Set([
+          normalize(item.name),
+          normalize(itemName(item, language)),
+        ]);
+        const summary = toSummary(item, language);
+
+        if ([...names].some((name) => name === needle)) exact.push(summary);
+        else if ([...names].some((name) => name.startsWith(needle))) {
+          prefix.push(summary);
+        } else if ([...names].some((name) => name.includes(needle))) {
+          partial.push(summary);
+        }
       }
 
       // An exact name match is never reported as ambiguous alongside looser
@@ -79,10 +97,10 @@ export function createMenuLookup(menuService: MenuService): MenuLookupPort {
       return ranked.slice(0, Math.max(0, limit));
     },
 
-    async getById(outletId, menuItemId) {
+    async getById(outletId, menuItemId, language = DEFAULT_LANGUAGE) {
       const all = await items(outletId);
       const found = all.find((item) => item.publicId === menuItemId);
-      return found === undefined ? undefined : toSummary(found);
+      return found === undefined ? undefined : toSummary(found, language);
     },
   };
 }

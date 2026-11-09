@@ -130,7 +130,10 @@ export async function runConversationTurn(
   // Backend-verified draft context. The summary carries names, quantities and
   // option IDs but no money, so the model cannot restate a total (docs/API.md,
   // "Shared conversational service contract").
-  let cart = await deps.cartService.getCart(scope);
+  // Read and written in the turn's language, so `displayName` on every line
+  // matches the language the assistant is replying in.
+  const view = { language: input.language };
+  let cart = await deps.cartService.getCart(scope, view);
 
   const result = await deps.conversation.handleTurn({
     sessionId: scope.sessionId,
@@ -151,7 +154,7 @@ export async function runConversationTurn(
   for (const action of result.draftActions) {
     try {
       if (action.type === 'clearDraft') {
-        cart = await deps.cartService.clear(scope);
+        cart = await deps.cartService.clear(scope, view);
         draftActions.push({ action, applied: true });
         continue;
       }
@@ -166,11 +169,15 @@ export async function runConversationTurn(
           draftActions.push({ action, applied: false, reason: 'incomplete_action' });
           continue;
         }
-        cart = await deps.cartService.addItem(scope, {
-          menuItemId: action.menuItemId,
-          quantity: action.quantity,
-          ...(action.optionIds === undefined ? {} : { optionIds: action.optionIds }),
-        });
+        cart = await deps.cartService.addItem(
+          scope,
+          {
+            menuItemId: action.menuItemId,
+            quantity: action.quantity,
+            ...(action.optionIds === undefined ? {} : { optionIds: action.optionIds }),
+          },
+          view,
+        );
         draftActions.push({ action, applied: true });
         continue;
       }
@@ -191,7 +198,7 @@ export async function runConversationTurn(
       }
 
       if (action.type === 'removeItem') {
-        cart = await deps.cartService.removeItem(scope, line.lineId);
+        cart = await deps.cartService.removeItem(scope, line.lineId, view);
         draftActions.push({ action, applied: true });
         continue;
       }
@@ -200,9 +207,12 @@ export async function runConversationTurn(
         draftActions.push({ action, applied: false, reason: 'incomplete_action' });
         continue;
       }
-      cart = await deps.cartService.updateItem(scope, line.lineId, {
-        quantity: action.quantity,
-      });
+      cart = await deps.cartService.updateItem(
+        scope,
+        line.lineId,
+        { quantity: action.quantity },
+        view,
+      );
       draftActions.push({ action, applied: true });
     } catch (error) {
       // Only a client-safe refusal is absorbed. A store outage or a bug is a

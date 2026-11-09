@@ -13,14 +13,17 @@
 
 import { randomUUID } from 'node:crypto';
 import {
+  DEFAULT_LANGUAGE,
   MAX_LINE_QUANTITY,
   MAX_QUOTE_LINES,
+  type Language,
   type QuoteLine,
   type QuoteRequest,
   type QuoteResponse,
 } from '@vop/shared';
 import { ApiError } from '../../middleware/errors.js';
 import { addMinor, multiplyMinor } from '../../models/money.js';
+import { itemName } from '../menu/localize.js';
 import type { MenuService, MenuSnapshot } from '../menu/menuService.js';
 import { assertSelection } from './pricing.js';
 import type { QuoteStore } from './quoteStore.js';
@@ -41,6 +44,12 @@ export interface QuoteService {
   createQuote(
     request: QuoteRequest,
     session: QuoteSessionScope,
+    /**
+     * Language for the quote's display names, and the language recorded as the
+     * order's checkout language when this quote is confirmed. English when
+     * omitted.
+     */
+    language?: Language,
   ): Promise<QuoteResponse>;
 }
 
@@ -127,6 +136,7 @@ function buildLine(
     quantity: number;
     optionIds: readonly string[];
   },
+  language: Language,
 ): QuoteLine {
   // Validation and pricing both live in the shared pricing module, so a cart
   // draft and a quote cannot disagree about a selection.
@@ -137,8 +147,11 @@ function buildLine(
 
   return {
     menuItemId: item.publicId,
-    // The name is snapshotted from the menu, never echoed from the client.
+    // Both names are snapshotted from the menu, never echoed from the client:
+    // `name` is the canonical English one that becomes the operational record,
+    // `displayName` is what the customer reviews and confirms.
     name: item.name,
+    displayName: itemName(item, language),
     quantity: requested.quantity,
     optionIds: requested.optionIds,
     unitPriceMinor,
@@ -157,6 +170,7 @@ export function createQuoteService(deps: QuoteServiceDeps): QuoteService {
     async createQuote(
       rawRequest: QuoteRequest,
       session: QuoteSessionScope,
+      language: Language = DEFAULT_LANGUAGE,
     ): Promise<QuoteResponse> {
       const request = validateRequest(rawRequest);
 
@@ -168,11 +182,15 @@ export function createQuoteService(deps: QuoteServiceDeps): QuoteService {
       const snapshot = await deps.menuService.getSnapshot(request.outletId);
 
       const items = request.items.map((requested) =>
-        buildLine(snapshot, {
-          menuItemId: requested.menuItemId,
-          quantity: requested.quantity,
-          optionIds: requested.optionIds ?? [],
-        }),
+        buildLine(
+          snapshot,
+          {
+            menuItemId: requested.menuItemId,
+            quantity: requested.quantity,
+            optionIds: requested.optionIds ?? [],
+          },
+          language,
+        ),
       );
 
       const subtotalMinor = items.reduce(
@@ -185,6 +203,7 @@ export function createQuoteService(deps: QuoteServiceDeps): QuoteService {
         quoteId: randomUUID(),
         outletId: request.outletId,
         menuVersion: snapshot.menuVersion,
+        language,
         items,
         subtotalMinor,
         // No tax or service-charge rule is configured; charge rules are an open

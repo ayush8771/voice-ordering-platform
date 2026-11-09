@@ -383,3 +383,63 @@ describe('POST /api/v1/cart/quote', () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe('cart language', () => {
+  it('localizes display names on a read and on a mutation', async () => {
+    const server = app();
+    const token = await session(server);
+
+    const added = await request(server)
+      .post('/api/v1/cart/items?lang=kn')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ menuItemId: 'item-idli', quantity: 1 });
+
+    expect(added.status).toBe(200);
+    expect(added.body.items[0].name).toBe('Idli');
+    expect(added.body.items[0].displayName).toBe('ಇಡ್ಲಿ');
+
+    const read = await request(server)
+      .get('/api/v1/cart?lang=hi')
+      .set('Authorization', `Bearer ${token}`);
+
+    // Nothing about the language is stored: the same draft reads differently.
+    expect(read.body.revision).toBe(1);
+    expect(read.body.items[0].displayName).toBe('इडली');
+
+    const english = await request(server)
+      .get('/api/v1/cart')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(english.body.items[0].displayName).toBe('Idli');
+  });
+
+  it('quotes the draft in the requested language', async () => {
+    const server = app();
+    const token = await session(server);
+
+    await request(server)
+      .post('/api/v1/cart/items')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ menuItemId: 'item-masala-dosa', quantity: 1 });
+
+    const quote = await request(server)
+      .post('/api/v1/cart/quote?lang=kn')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(quote.status).toBe(200);
+    expect(quote.body.language).toBe('kn');
+    expect(quote.body.items[0].displayName).toBe('ಮಸಾಲೆ ದೋಸೆ');
+  });
+
+  it('rejects an unsupported language on a cart route with 400', async () => {
+    const server = app();
+    const token = await session(server);
+
+    const response = await request(server)
+      .get('/api/v1/cart?lang=ta')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});

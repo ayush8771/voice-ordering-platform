@@ -1,6 +1,7 @@
 /** Public surface of the menu service. */
 
 export { createMenuLookup } from './menuLookup.js';
+export { computeContentVersion, itemName } from './localize.js';
 export type { MenuRepository } from './menuRepository.js';
 export {
   computeMenuVersion,

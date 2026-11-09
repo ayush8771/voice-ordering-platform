@@ -24,7 +24,13 @@
  * or a later migration sees no difference.
  */
 
-import type { Channel, OrderStatus, PaymentMethod, PaymentStatus } from '@vop/shared';
+import type {
+  Channel,
+  Language,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from '@vop/shared';
 import type { Currency } from './money.js';
 
 export const ORDER_COLLECTIONS = {
@@ -39,7 +45,16 @@ export const ORDER_COLLECTIONS = {
 
 export interface OrderItemDoc {
   readonly menuItemId: string;
+  /** Canonical English name at acceptance: the operational record. */
   readonly nameAtOrder: string;
+  /**
+   * The same name in the order's `checkoutLanguage`, frozen at acceptance.
+   *
+   * Optional because orders written before the multilingual milestone do not
+   * carry it; a read falls back to `nameAtOrder`, which is what such an order
+   * was displayed as anyway.
+   */
+  readonly displayNameAtOrder?: string;
   readonly quantity: number;
   readonly optionIds: readonly string[];
   readonly unitPriceMinor: number;
@@ -87,6 +102,13 @@ export interface OrderDoc {
   /** The quote the customer confirmed, and the menu it was priced against. */
   readonly quoteId: string;
   readonly menuVersion: string;
+  /**
+   * The language the customer confirmed in, copied from the quote rather than
+   * from the confirming request: it records what the customer saw at review,
+   * so no later request can rewrite it. Optional for orders written before
+   * this milestone; a read of one defaults to English.
+   */
+  readonly checkoutLanguage?: Language;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly statusHistory: readonly OrderStatusEventDoc[];

@@ -29,7 +29,7 @@
  *   quote service's generic wording rather than the cart's own issue reasons.
  */
 
-import type { QuoteResponse } from '@vop/shared';
+import { DEFAULT_LANGUAGE, type Language, type QuoteResponse } from '@vop/shared';
 import { ApiError } from '../middleware/errors.js';
 import type { CartService, CartSessionScope } from '../services/cart/cartService.js';
 import type { QuoteService } from '../services/quote/quoteService.js';
@@ -42,8 +42,10 @@ export interface QuoteFromCartDeps {
 export async function createQuoteFromCart(
   deps: QuoteFromCartDeps,
   scope: CartSessionScope,
+  /** Display language for the draft read and the quote issued from it. */
+  language: Language = DEFAULT_LANGUAGE,
 ): Promise<QuoteResponse> {
-  const cart = await deps.cartService.getCart(scope);
+  const cart = await deps.cartService.getCart(scope, { language });
 
   if (cart.items.length === 0) {
     throw ApiError.validation(
@@ -72,5 +74,6 @@ export async function createQuoteFromCart(
       })),
     },
     { sessionId: scope.sessionId, outletId: scope.outletId },
+    language,
   );
 }

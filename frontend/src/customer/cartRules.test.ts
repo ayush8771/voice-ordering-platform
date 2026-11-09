@@ -37,6 +37,7 @@ const line = {
   lineId: 'line-1',
   menuItemId: 'item-1',
   name: 'Masala Dosa',
+  displayName: 'Masala Dosa',
   quantity: 1,
   optionIds: [],
   unitPriceMinor: 8000,

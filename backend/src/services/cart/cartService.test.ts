@@ -119,6 +119,7 @@ describe('cart draft basics', () => {
       lineId: expect.any(String),
       menuItemId: 'item-masala-dosa',
       name: 'Masala Dosa',
+      displayName: 'Masala Dosa',
       quantity: 2,
       optionIds: ['opt-ghee'],
       unitPriceMinor: 10_500,
@@ -626,5 +627,83 @@ describe('conversation draft summary', () => {
       ],
     });
     expect(JSON.stringify(summary)).not.toMatch(/Minor/);
+  });
+});
+
+describe('draft display names', () => {
+  it('carries the canonical English name and the localized one', async () => {
+    const { cartService } = service();
+    await cartService.addItem(SESSION, { menuItemId: 'item-masala-dosa', quantity: 1 });
+
+    const kn = await cartService.getCart(SESSION, { language: 'kn' });
+
+    expect(kn.items[0]?.name).toBe('Masala Dosa');
+    expect(kn.items[0]?.displayName).toBe('ಮಸಾಲೆ ದೋಸೆ');
+  });
+
+  it('displays the English name when no language is asked for', async () => {
+    const { cartService } = service();
+    const cart = await cartService.addItem(SESSION, {
+      menuItemId: 'item-masala-dosa',
+      quantity: 1,
+    });
+
+    expect(cart.items[0]?.displayName).toBe('Masala Dosa');
+  });
+
+  it('localizes the response of a mutation too', async () => {
+    const { cartService } = service();
+    const cart = await cartService.addItem(
+      SESSION,
+      { menuItemId: 'item-idli', quantity: 1 },
+      { language: 'hi' },
+    );
+
+    expect(cart.items[0]?.name).toBe('Idli');
+    expect(cart.items[0]?.displayName).toBe('इडली');
+  });
+
+  it('falls back to English for an untranslated item', async () => {
+    const { cartService } = service();
+    await cartService.addItem(SESSION, { menuItemId: 'item-cold-coffee', quantity: 1 });
+
+    const cart = await cartService.getCart(SESSION, { language: 'kn' });
+
+    expect(cart.items[0]?.displayName).toBe('Cold Coffee');
+  });
+
+  it('labels a line whose item left the menu with the add-time snapshot', async () => {
+    const { cartService } = service();
+    await cartService.addItem(SESSION, { menuItemId: 'item-idli', quantity: 1 });
+    dataset.items = dataset.items.filter((item) => item.publicId !== 'item-idli');
+
+    const cart = await cartService.getCart(SESSION, { language: 'kn' });
+
+    // There is no item left to translate, and the snapshot is English.
+    expect(cart.items[0]?.issues).toEqual(['itemNotOnMenu']);
+    expect(cart.items[0]?.name).toBe('Idli');
+    expect(cart.items[0]?.displayName).toBe('Idli');
+  });
+
+  it('still localizes a line whose item is merely sold out', async () => {
+    const { cartService } = service();
+    await cartService.addItem(SESSION, { menuItemId: 'item-idli', quantity: 1 });
+    patchItem('item-idli', { active: false });
+
+    const cart = await cartService.getCart(SESSION, { language: 'kn' });
+
+    expect(cart.items[0]?.issues).toEqual(['itemUnavailable']);
+    expect(cart.items[0]?.displayName).toBe('ಇಡ್ಲಿ');
+  });
+
+  it('summarizes the draft for the model in the turn language', async () => {
+    const { cartService } = service();
+    await cartService.addItem(SESSION, { menuItemId: 'item-idli', quantity: 1 });
+
+    const summary = toDraftSummary(
+      await cartService.getCart(SESSION, { language: 'kn' }),
+    );
+
+    expect(summary.items[0]?.name).toBe('ಇಡ್ಲಿ');
   });
 });

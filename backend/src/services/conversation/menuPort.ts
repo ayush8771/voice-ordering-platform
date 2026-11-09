@@ -11,9 +11,15 @@
  * state, so no allowlisted tool can either.
  */
 
+import type { Language } from '@vop/shared';
+
 /** The only menu facts the conversation layer needs. */
 export interface MenuItemSummary {
   readonly id: string;
+  /**
+   * The name in the turn's language, falling back to English per field. The
+   * model sees - and so repeats back - the words the customer is using.
+   */
   readonly name: string;
   readonly available: boolean;
   /** Integer minor units, for accurate suggestion text only. */
@@ -24,15 +30,26 @@ export interface MenuItemSummary {
 
 export interface MenuLookupPort {
   /**
-   * Resolve free text ("masala dosa") to candidate items for one outlet.
-   * Implementations must scope results to `outletId` and bound them to `limit`.
+   * Resolve free text ("masala dosa", "ಮಸಾಲೆ ದೋಸೆ") to candidate items for one
+   * outlet. Implementations must scope results to `outletId` and bound them to
+   * `limit`.
+   *
+   * `language` is the turn's language: an implementation matches the item's
+   * translated name in that language *as well as* its canonical English name,
+   * so a Kannada utterance resolves and an English word inside a Kannada
+   * sentence still resolves. Omitted means English only.
    */
   search(
     outletId: string,
     query: string,
     limit: number,
+    language?: Language,
   ): Promise<readonly MenuItemSummary[]>;
 
   /** Fetch one item by backend ID, or undefined when it is not in this outlet. */
-  getById(outletId: string, menuItemId: string): Promise<MenuItemSummary | undefined>;
+  getById(
+    outletId: string,
+    menuItemId: string,
+    language?: Language,
+  ): Promise<MenuItemSummary | undefined>;
 }

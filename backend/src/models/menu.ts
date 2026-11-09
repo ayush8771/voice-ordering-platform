@@ -7,8 +7,23 @@
  *
  * Money is integer minor units (paise) with currency `INR`; no float ever
  * touches a price.
+ *
+ * Localization (docs/DATABASE.md section 2, previously open): every
+ * customer-visible string stays a plain English field and carries an optional
+ * `translations` overlay keyed by language. It is embedded rather than held in
+ * its own collection because a translation is read on every menu read and
+ * edited with the item it belongs to - a separate collection would add a
+ * second query and a join for data that has no life of its own. No index
+ * covers it: nothing queries by translated text, and resolution happens after
+ * the existing outlet-scoped read.
  */
 
+import type {
+  MenuCategoryTranslations,
+  MenuItemTranslations,
+  MenuOptionTranslations,
+  OutletTranslations,
+} from '@vop/shared';
 import type { Currency } from './money.js';
 
 /**
@@ -42,6 +57,8 @@ export interface OutletDoc {
   readonly slug?: string;
   readonly timezone?: string;
   readonly currency: Currency;
+  /** Optional kn/hi overlay on `name`. Absent fields fall back to English. */
+  readonly translations?: OutletTranslations;
   /** An inactive outlet is indistinguishable from an unknown one to a client. */
   readonly active: boolean;
   readonly createdAt?: Date;
@@ -52,6 +69,8 @@ export interface MenuCategoryDoc {
   readonly publicId: string;
   readonly outletId: string;
   readonly name: string;
+  /** Optional kn/hi overlay on `name`. */
+  readonly translations?: MenuCategoryTranslations;
   readonly sortOrder: number;
   readonly active: boolean;
   readonly updatedAt?: Date;
@@ -60,6 +79,8 @@ export interface MenuCategoryDoc {
 export interface MenuItemOptionDoc {
   readonly publicId: string;
   readonly label: string;
+  /** Optional kn/hi overlay on `label`. */
+  readonly translations?: MenuOptionTranslations;
   /** May be zero or negative; the quote service refuses a negative unit price. */
   readonly priceDeltaMinor: number;
   readonly active: boolean;
@@ -70,6 +91,11 @@ export interface MenuItemDoc {
   readonly outletId: string;
   readonly name: string;
   readonly description?: string;
+  /**
+   * Optional kn/hi overlay on `name` and `description`. Resolution is per
+   * field, so a Kannada name with no Kannada description is normal.
+   */
+  readonly translations?: MenuItemTranslations;
   readonly priceMinor: number;
   readonly currency: Currency;
   /** `active` is the merchant availability switch from docs/DATABASE.md. */

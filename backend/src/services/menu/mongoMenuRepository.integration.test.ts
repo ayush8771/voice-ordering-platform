@@ -195,6 +195,24 @@ describe('MongoMenuRepository', () => {
     }
   });
 
+  it('round-trips the embedded translations and serves a localized menu', async () => {
+    await load(mongo.db);
+    const service = createMenuService(new MongoMenuRepository(mongo.db));
+
+    const kn = await service.getPublicMenu('demo-outlet', 'kn');
+    const en = await service.getPublicMenu('demo-outlet');
+    const dosa = kn.items.find((item) => item.id === 'item-masala-dosa');
+
+    expect(dosa?.name).toBe('ಮಸಾಲೆ ದೋಸೆ');
+    expect(kn.categories.find((c) => c.id === 'cat-tiffin')?.name).toBe('ಟಿಫಿನ್');
+    expect(dosa?.options.find((o) => o.id === 'opt-extra-chutney')?.label).toBe(
+      'ಹೆಚ್ಚುವರಿ ಚಟ್ನಿ',
+    );
+    // Stored text is the only difference: the ordering fingerprint is shared.
+    expect(kn.menuVersion).toBe(en.menuVersion);
+    expect(kn.contentVersion).not.toBe(en.contentVersion);
+  });
+
   it('hides an inactive outlet and an unknown one identically', async () => {
     await load(mongo.db);
     const repository = new MongoMenuRepository(mongo.db);

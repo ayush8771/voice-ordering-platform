@@ -24,19 +24,24 @@
  * lines to `POST /api/v1/quotes`, which is the only way today a quote is
  * guaranteed to match what the cart endpoints actually show the customer.
  *
+ * `?lang=en|kn|hi` on any of them sets `CartLine.displayName` (and the display
+ * names of the quote `POST /cart/quote` issues). It is display only: the stored
+ * draft, the prices and every validation rule are identical whatever it says.
+ *
  * Optimistic concurrency: send `If-Match: <revision>` on a mutation to have it
  * refused with `409` if the draft moved since the caller read it. Omitting the
  * header means "apply to whatever is there", which is still safe because
  * mutations for one session are serialized server-side.
  */
 
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import type { AddCartItemRequest, UpdateCartItemRequest } from '@vop/shared';
 import { ApiError } from '../middleware/errors.js';
 import {
   getOrderingSession,
   requireOrderingSession,
 } from '../middleware/orderingSession.js';
+import { readLanguageParam } from '../models/language.js';
 import type {
   CartMutationOptions,
   CartService,
@@ -52,8 +57,11 @@ import { createQuoteFromCart } from '../workflows/quoteFromCart.js';
 /** Longest `lineId` accepted before it is looked up: a UUID is 36 characters. */
 const MAX_LINE_ID_CHARS = 64;
 
-function readMutationOptions(header: unknown): CartMutationOptions {
-  if (header === undefined) return {};
+function readMutationOptions(req: Request): CartMutationOptions {
+  const language = readLanguageParam(req.query['lang']);
+  const header = req.headers['if-match'];
+
+  if (header === undefined) return { language };
   if (typeof header !== 'string') {
     throw ApiError.validation('If-Match must be a single draft revision');
   }
@@ -64,7 +72,7 @@ function readMutationOptions(header: unknown): CartMutationOptions {
   if (!Number.isInteger(revision) || revision < 0) {
     throw ApiError.validation('If-Match must be a draft revision number');
   }
-  return { expectedRevision: revision };
+  return { expectedRevision: revision, language };
 }
 
 function readLineId(raw: unknown): string {
@@ -112,7 +120,8 @@ export function createCartRouter(
   router.get('/cart', async (req, res, next) => {
     try {
       const session = getOrderingSession(req);
-      res.status(200).json(await cartService.getCart(toScope(session)));
+      const language = readLanguageParam(req.query['lang']);
+      res.status(200).json(await cartService.getCart(toScope(session), { language }));
     } catch (error) {
       next(error);
     }
@@ -128,7 +137,7 @@ export function createCartRouter(
       const cart = await cartService.addItem(
         toScope(session),
         req.body as AddCartItemRequest,
-        readMutationOptions(req.headers['if-match']),
+        readMutationOptions(req),
       );
 
       res.status(200).json(cart);
@@ -146,7 +155,7 @@ export function createCartRouter(
         toScope(session),
         readLineId(req.params.lineId),
         req.body as UpdateCartItemRequest,
-        readMutationOptions(req.headers['if-match']),
+        readMutationOptions(req),
       );
 
       res.status(200).json(cart);
@@ -161,7 +170,7 @@ export function createCartRouter(
       const cart = await cartService.removeItem(
         toScope(session),
         readLineId(req.params.lineId),
-        readMutationOptions(req.headers['if-match']),
+        readMutationOptions(req),
       );
 
       res.status(200).json(cart);
@@ -173,10 +182,7 @@ export function createCartRouter(
   router.delete('/cart', async (req, res, next) => {
     try {
       const session = getOrderingSession(req);
-      const cart = await cartService.clear(
-        toScope(session),
-        readMutationOptions(req.headers['if-match']),
-      );
+      const cart = await cartService.clear(toScope(session), readMutationOptions(req));
 
       res.status(200).json(cart);
     } catch (error) {
@@ -190,6 +196,7 @@ export function createCartRouter(
       const quote = await createQuoteFromCart(
         { cartService, quoteService },
         toScope(session),
+        readLanguageParam(req.query['lang']),
       );
       res.status(200).json(quote);
     } catch (error) {

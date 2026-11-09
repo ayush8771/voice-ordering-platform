@@ -9,6 +9,7 @@ function quote(quoteId: string, expiresAtMs = BASE_MS + 60_000): QuoteResponse {
     quoteId,
     outletId: 'demo-outlet',
     menuVersion: 'v1',
+    language: 'en',
     items: [],
     subtotalMinor: 0,
     totalMinor: 0,

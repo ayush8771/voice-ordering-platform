@@ -24,12 +24,13 @@
  */
 
 import { Router } from 'express';
-import { LANGUAGES, type ConversationTurnResponse, type Language } from '@vop/shared';
+import type { ConversationTurnResponse } from '@vop/shared';
 import { ApiError } from '../middleware/errors.js';
 import {
   getOrderingSession,
   requireOrderingSession,
 } from '../middleware/orderingSession.js';
+import { parseLanguage } from '../models/language.js';
 import {
   ConversationError,
   CONVERSATION_PHASES,
@@ -59,13 +60,6 @@ function toApiError(error: ConversationError): ApiError {
     default:
       return ApiError.validation(error.message);
   }
-}
-
-function readLanguage(raw: unknown): Language {
-  if (typeof raw === 'string' && (LANGUAGES as readonly string[]).includes(raw)) {
-    return raw as Language;
-  }
-  throw ApiError.validation(`language must be one of ${LANGUAGES.join(', ')}`);
 }
 
 function readPhase(raw: unknown): ConversationPhase {
@@ -130,7 +124,7 @@ export function createConversationRouter(
           // From the session, never the body: the channel decides kiosk versus
           // QR wording and must not be chosen by the caller.
           channel: session.channel,
-          language: readLanguage(body['language']),
+          language: parseLanguage(body['language']),
           phase: readPhase(body['phase']),
           // Length and emptiness are the conversation service's bounds.
           text: typeof body['text'] === 'string' ? body['text'] : '',

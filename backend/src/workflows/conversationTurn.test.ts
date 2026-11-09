@@ -350,3 +350,39 @@ describe('runConversationTurn', () => {
     expect((await cartService.getCart(SCOPE)).items[0]?.quantity).toBe(2);
   });
 });
+
+describe('turn language', () => {
+  it('returns the draft with display names in the turn language', async () => {
+    const { turn } = harness([
+      modelReply({
+        reply: 'ಎರಡು ಮಸಾಲೆ ದೋಸೆ ಸೇರಿಸಿದೆ.',
+        toolCalls: [
+          propose({ type: 'addItem', menuItemRef: 'ಮಸಾಲೆ ದೋಸೆ', quantity: 2 }),
+        ],
+      }),
+    ]);
+
+    const result = await turn('ಎರಡು ಮಸಾಲೆ ದೋಸೆ', { language: 'kn' });
+
+    expect(result.draftActions[0]?.applied).toBe(true);
+    expect(result.cart.items[0]?.menuItemId).toBe(DOSA);
+    // Canonical English stays on the line; the customer's language is beside it.
+    expect(result.cart.items[0]?.name).toBe('Masala Dosa');
+    expect(result.cart.items[0]?.displayName).toBe('ಮಸಾಲೆ ದೋಸೆ');
+  });
+
+  it('leaves the stored draft language-neutral', async () => {
+    const { turn } = harness([
+      modelReply({
+        toolCalls: [propose({ type: 'addItem', menuItemRef: 'ಇಡ್ಲಿ', quantity: 1 })],
+      }),
+    ]);
+
+    await turn('ಒಂದು ಇಡ್ಲಿ', { language: 'kn' });
+
+    // The same draft read in English: nothing about the turn's language was
+    // written to the store.
+    const english = await cartService.getCart(SCOPE);
+    expect(english.items[0]?.displayName).toBe('Idli');
+  });
+});

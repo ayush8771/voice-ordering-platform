@@ -9,10 +9,30 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { MenuCategory, MenuItem, MenuOption, MenuResponse } from '@vop/shared';
+import {
+  DEFAULT_LANGUAGE,
+  type Language,
+  type MenuCategory,
+  type MenuItem,
+  type MenuOption,
+  type MenuResponse,
+} from '@vop/shared';
 import { ApiError } from '../../middleware/errors.js';
-import type { MenuCategoryDoc, MenuItemDoc, OutletDoc } from '../../models/menu.js';
+import type {
+  MenuCategoryDoc,
+  MenuItemDoc,
+  MenuItemOptionDoc,
+  OutletDoc,
+} from '../../models/menu.js';
 import { assertMinorUnits } from '../../models/money.js';
+import {
+  categoryName,
+  computeContentVersion,
+  itemDescription,
+  itemName,
+  optionLabel,
+  outletName,
+} from './localize.js';
 import type { MenuRepository } from './menuRepository.js';
 
 /** Internal view used for pricing and validation. */
@@ -27,8 +47,14 @@ export interface MenuSnapshot {
 }
 
 export interface MenuService {
+  /**
+   * The internal snapshot. Language independent on purpose: it carries the
+   * stored documents, translations included, so a pricing caller sees exactly
+   * one menu whatever language the customer is using.
+   */
   getSnapshot(outletId: string): Promise<MenuSnapshot>;
-  getPublicMenu(outletId: string): Promise<MenuResponse>;
+  /** The public menu with every string resolved into `language`. */
+  getPublicMenu(outletId: string, language?: Language): Promise<MenuResponse>;
 }
 
 /**
@@ -38,6 +64,12 @@ export interface MenuService {
  * of sync with the menu and needs no write path. Any change to an item's price,
  * availability, category or options - or to a category's name or order -
  * changes the value, which is what makes a stale quote detectable.
+ *
+ * **Translations are not an input.** This value gates ordering (a moved
+ * `menuVersion` is a `409` "re-confirm"), and a Kannada or Hindi string changes
+ * no price and no availability. Translating an item therefore leaves every
+ * in-flight quote valid; `computeContentVersion` in `localize.ts` is what moves
+ * for a text-only edit, and nothing in the ordering path reads it.
  */
 export function computeMenuVersion(
   categories: readonly MenuCategoryDoc[],
@@ -70,27 +102,25 @@ export function computeMenuVersion(
     .slice(0, 16);
 }
 
-function toPublicOption(option: {
-  publicId: string;
-  label: string;
-  priceDeltaMinor: number;
-}): MenuOption {
+function toPublicOption(option: MenuItemOptionDoc, language: Language): MenuOption {
   return {
     id: option.publicId,
-    label: option.label,
+    label: optionLabel(option, language),
     priceDeltaMinor: option.priceDeltaMinor,
   };
 }
 
-function toPublicItem(item: MenuItemDoc): MenuItem {
+function toPublicItem(item: MenuItemDoc, language: Language): MenuItem {
+  const description = itemDescription(item, language);
+
   // A stored price that is not a valid integer amount is a data fault, not a
   // customer error: fail loudly rather than serve a broken price.
   assertMinorUnits(item.priceMinor, `menuItem ${item.publicId} priceMinor`);
 
   return {
     id: item.publicId,
-    name: item.name,
-    ...(item.description === undefined ? {} : { description: item.description }),
+    name: itemName(item, language),
+    ...(description === undefined ? {} : { description }),
     priceMinor: item.priceMinor,
     currency: item.currency,
     // Merchant availability. Inactive items stay visible but unselectable so
@@ -99,14 +129,16 @@ function toPublicItem(item: MenuItemDoc): MenuItem {
     ...(item.categoryId === undefined ? {} : { categoryId: item.categoryId }),
     // Inactive options are omitted entirely: an option a customer cannot pick
     // has no place in the public menu.
-    options: (item.options ?? []).filter((option) => option.active).map(toPublicOption),
+    options: (item.options ?? [])
+      .filter((option) => option.active)
+      .map((option) => toPublicOption(option, language)),
   };
 }
 
-function toPublicCategory(category: MenuCategoryDoc): MenuCategory {
+function toPublicCategory(category: MenuCategoryDoc, language: Language): MenuCategory {
   return {
     id: category.publicId,
-    name: category.name,
+    name: categoryName(category, language),
     sortOrder: category.sortOrder,
   };
 }
@@ -136,18 +168,30 @@ export function createMenuService(repository: MenuRepository): MenuService {
 
   return {
     getSnapshot,
-    async getPublicMenu(outletId: string): Promise<MenuResponse> {
+    async getPublicMenu(
+      outletId: string,
+      language: Language = DEFAULT_LANGUAGE,
+    ): Promise<MenuResponse> {
       const snapshot = await getSnapshot(outletId);
 
       return {
         outlet: {
           id: snapshot.outlet.publicId,
-          name: snapshot.outlet.name,
+          name: outletName(snapshot.outlet, language),
           currency: snapshot.outlet.currency,
         },
         menuVersion: snapshot.menuVersion,
-        categories: snapshot.categories.map(toPublicCategory),
-        items: snapshot.items.map(toPublicItem),
+        language,
+        contentVersion: computeContentVersion(
+          language,
+          snapshot.outlet,
+          snapshot.categories,
+          snapshot.items,
+        ),
+        categories: snapshot.categories.map((category) =>
+          toPublicCategory(category, language),
+        ),
+        items: snapshot.items.map((item) => toPublicItem(item, language)),
       };
     },
   };

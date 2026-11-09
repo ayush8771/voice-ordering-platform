@@ -23,6 +23,8 @@ function item(overrides: Partial<MenuItem> & { id: string; name: string }): Menu
 const menu: MenuResponse = {
   outlet: { id: 'demo-outlet', name: 'Demo' } as MenuResponse['outlet'],
   menuVersion: 'v1',
+  language: 'en',
+  contentVersion: 'c1',
   categories: [
     { id: 'drinks', name: 'Drinks', sortOrder: 2 },
     { id: 'tiffin', name: 'Tiffin', sortOrder: 1 },

@@ -39,17 +39,20 @@
 
 import { randomUUID } from 'node:crypto';
 import {
+  DEFAULT_LANGUAGE,
   MAX_CART_LINE_QUANTITY,
   MAX_CART_LINES,
   type AddCartItemRequest,
   type CartLine,
   type CartLineIssue,
   type CartResponse,
+  type Language,
   type UpdateCartItemRequest,
 } from '@vop/shared';
 import { ApiError } from '../../middleware/errors.js';
 import { addMinor, MoneyError, multiplyMinor } from '../../models/money.js';
 import type { DraftSummary } from '../conversation/types.js';
+import { itemName } from '../menu/localize.js';
 import type { MenuService, MenuSnapshot } from '../menu/menuService.js';
 import { assertSelection, evaluateSelection } from '../quote/pricing.js';
 import {
@@ -71,14 +74,27 @@ export interface CartSessionScope {
   readonly expiresAtMs: number;
 }
 
+/**
+ * How the draft is *rendered*, as opposed to who owns it.
+ *
+ * Deliberately not part of `CartSessionScope`: the language is client-chosen
+ * and changes nothing about what may be ordered, while every field of the
+ * scope is authenticated and authorizing. Keeping them apart means no later
+ * reader can mistake one for the other.
+ */
+export interface CartViewOptions {
+  /** Language for `CartLine.displayName`. English when omitted. */
+  readonly language?: Language;
+}
+
 /** Optimistic-concurrency option carried by every mutation. */
-export interface CartMutationOptions {
+export interface CartMutationOptions extends CartViewOptions {
   /** When set, the mutation applies only to this revision of the draft. */
   readonly expectedRevision?: number;
 }
 
 export interface CartService {
-  getCart(scope: CartSessionScope): Promise<CartResponse>;
+  getCart(scope: CartSessionScope, options?: CartViewOptions): Promise<CartResponse>;
   addItem(
     scope: CartSessionScope,
     input: AddCartItemRequest,
@@ -138,12 +154,21 @@ function sameSelection(
 }
 
 /** Prices one stored line against the current menu, degrading never throwing. */
-function priceLine(snapshot: MenuSnapshot, line: CartLineRecord): CartLine {
-  function unorderable(issues: readonly CartLineIssue[], name: string): CartLine {
+function priceLine(
+  snapshot: MenuSnapshot,
+  line: CartLineRecord,
+  language: Language,
+): CartLine {
+  function unorderable(
+    issues: readonly CartLineIssue[],
+    name: string,
+    displayName = name,
+  ): CartLine {
     return {
       lineId: line.lineId,
       menuItemId: line.menuItemId,
       name,
+      displayName,
       quantity: line.quantity,
       optionIds: line.optionIds,
       // No stale price is ever reported for a line that cannot be ordered.
@@ -169,7 +194,13 @@ function priceLine(snapshot: MenuSnapshot, line: CartLineRecord): CartLine {
 
   if (!evaluation.ok) {
     const item = snapshot.itemsById.get(line.menuItemId);
-    return unorderable([evaluation.issue.reason], item?.name ?? line.nameSnapshot);
+    // An item that has left the menu has no translation to resolve either, so
+    // the add-time English snapshot labels both names.
+    return unorderable(
+      [evaluation.issue.reason],
+      item?.name ?? line.nameSnapshot,
+      item === undefined ? line.nameSnapshot : itemName(item, language),
+    );
   }
 
   try {
@@ -178,6 +209,7 @@ function priceLine(snapshot: MenuSnapshot, line: CartLineRecord): CartLine {
       menuItemId: evaluation.item.publicId,
       // Snapshotted from the menu on every read, never echoed from a client.
       name: evaluation.item.name,
+      displayName: itemName(evaluation.item, language),
       quantity: line.quantity,
       optionIds: line.optionIds,
       unitPriceMinor: evaluation.unitPriceMinor,
@@ -191,13 +223,21 @@ function priceLine(snapshot: MenuSnapshot, line: CartLineRecord): CartLine {
     };
   } catch (error) {
     if (!(error instanceof MoneyError)) throw error;
-    return unorderable(['notPriceable'], evaluation.item.name);
+    return unorderable(
+      ['notPriceable'],
+      evaluation.item.name,
+      itemName(evaluation.item, language),
+    );
   }
 }
 
 /** Builds the response from a stored record and a fresh menu snapshot. */
-function toResponse(record: CartRecord, snapshot: MenuSnapshot): CartResponse {
-  const items = record.lines.map((line) => priceLine(snapshot, line));
+function toResponse(
+  record: CartRecord,
+  snapshot: MenuSnapshot,
+  language: Language,
+): CartResponse {
+  const items = record.lines.map((line) => priceLine(snapshot, line, language));
 
   // Unorderable lines contribute nothing: a draft total never includes
   // something the customer cannot actually buy.
@@ -290,6 +330,8 @@ export function createCartService(deps: CartServiceDeps): CartService {
       snapshot: MenuSnapshot,
     ) => readonly CartLineRecord[] | undefined,
   ): Promise<CartResponse> {
+    const language = options?.language ?? DEFAULT_LANGUAGE;
+
     return withLock(scope.sessionId, async () => {
       // A caller that named a revision gets one attempt: a conflict is the
       // answer it asked for. A caller that named none retries, because the
@@ -308,7 +350,7 @@ export function createCartService(deps: CartServiceDeps): CartService {
         if (lines === undefined) {
           // Nothing changed, so the revision does not move: a no-op must not
           // invalidate another client's `expectedRevision`.
-          return toResponse(record, snapshot);
+          return toResponse(record, snapshot, language);
         }
 
         try {
@@ -316,7 +358,7 @@ export function createCartService(deps: CartServiceDeps): CartService {
             { ...record, revision: record.revision + 1, lines },
             scope.expiresAtMs,
           );
-          return toResponse(saved, snapshot);
+          return toResponse(saved, snapshot, language);
         } catch (error) {
           if (!(error instanceof CartRevisionConflictError)) throw error;
           if (attempt >= attempts) {
@@ -342,9 +384,13 @@ export function createCartService(deps: CartServiceDeps): CartService {
   }
 
   return {
-    async getCart(scope) {
+    async getCart(scope, options) {
       const snapshot = await deps.menuService.getSnapshot(scope.outletId);
-      return toResponse(await load(scope), snapshot);
+      return toResponse(
+        await load(scope),
+        snapshot,
+        options?.language ?? DEFAULT_LANGUAGE,
+      );
     },
 
     // `async` so a body-validation fault arrives as a rejection rather than a
@@ -468,7 +514,9 @@ export function toDraftSummary(cart: CartResponse): DraftSummary {
       .filter((line) => line.available)
       .map((line) => ({
         menuItemId: line.menuItemId,
-        name: line.name,
+        // The localized name: the model is talking to the customer in their
+        // language, so the draft it is shown reads in that language too.
+        name: line.displayName,
         quantity: line.quantity,
         ...(line.optionIds.length === 0 ? {} : { optionIds: line.optionIds }),
       })),

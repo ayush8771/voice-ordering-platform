@@ -50,6 +50,7 @@ describe('pricing', () => {
       {
         menuItemId: 'item-idli',
         name: 'Idli',
+        displayName: 'Idli',
         quantity: 3,
         optionIds: [],
         unitPriceMinor: 4000,
@@ -449,5 +450,50 @@ describe('negative and oversized amounts', () => {
         SESSION,
       ),
     ).rejects.toThrow(/exceeds the maximum supported amount/);
+  });
+});
+
+describe('quote language', () => {
+  it('defaults to English and records the language on the quote', async () => {
+    const { quoteService } = service();
+
+    const quote = await quoteService.createQuote(
+      { outletId: 'demo-outlet', items: [{ menuItemId: 'item-idli', quantity: 1 }] },
+      SESSION,
+    );
+
+    expect(quote.language).toBe('en');
+    expect(quote.items[0]?.displayName).toBe('Idli');
+  });
+
+  it('keeps the canonical English name beside the localized one', async () => {
+    const { quoteService } = service();
+
+    const quote = await quoteService.createQuote(
+      { outletId: 'demo-outlet', items: [{ menuItemId: 'item-idli', quantity: 1 }] },
+      SESSION,
+      'kn',
+    );
+
+    expect(quote.language).toBe('kn');
+    expect(quote.items[0]?.name).toBe('Idli');
+    expect(quote.items[0]?.displayName).toBe('ಇಡ್ಲಿ');
+  });
+
+  it('prices identically whatever the language', async () => {
+    const { quoteService } = service();
+    const request = {
+      outletId: 'demo-outlet',
+      items: [{ menuItemId: 'item-masala-dosa', quantity: 2, optionIds: ['opt-ghee'] }],
+    };
+
+    const en = await quoteService.createQuote(request, SESSION);
+    const hi = await quoteService.createQuote(request, SESSION, 'hi');
+
+    // Language is display only: no amount and no menu fingerprint may move.
+    expect(hi.totalMinor).toBe(en.totalMinor);
+    expect(hi.subtotalMinor).toBe(en.subtotalMinor);
+    expect(hi.menuVersion).toBe(en.menuVersion);
+    expect(hi.items[0]?.displayName).toBe('मसाला डोसा');
   });
 });

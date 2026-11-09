@@ -13,7 +13,7 @@
  * path in this file can create an order, accept a quote or touch payment state.
  */
 
-import { CHANNELS, LANGUAGES } from '@vop/shared';
+import { CHANNELS, LANGUAGES, type Language } from '@vop/shared';
 import {
   ProviderError,
   type ChatMessage,
@@ -130,12 +130,16 @@ export function createConversationService(
    * ambiguous rather than picked, because docs/PRD.md section 5 forbids
    * silently adding a guessed item.
    */
-  async function resolveRef(outletId: string, ref: string): Promise<ResolvedRef> {
-    const byId = await menu.getById(outletId, ref);
+  async function resolveRef(
+    outletId: string,
+    language: Language,
+    ref: string,
+  ): Promise<ResolvedRef> {
+    const byId = await menu.getById(outletId, ref, language);
     const candidates =
       byId !== undefined
         ? [byId]
-        : [...(await menu.search(outletId, ref, MAX_SEARCH_RESULTS))];
+        : [...(await menu.search(outletId, ref, MAX_SEARCH_RESULTS, language))];
 
     if (candidates.length === 0) return { state: 'unresolved' };
 
@@ -156,6 +160,7 @@ export function createConversationService(
   /** Turns one validated proposal into a draft action, or records why not. */
   async function toDraftAction(
     outletId: string,
+    language: Language,
     call: ProposeDraftUpdateArgs,
     violations: PolicyViolation[],
     onResolved: (item: MenuItemSummary) => void,
@@ -168,7 +173,7 @@ export function createConversationService(
       return undefined;
     }
 
-    const resolved = await resolveRef(outletId, ref);
+    const resolved = await resolveRef(outletId, language, ref);
     if (resolved.state !== 'resolved') {
       violations.push({
         kind:
@@ -210,6 +215,7 @@ export function createConversationService(
   /** Resolves suggested items and drops anything not orderable right now. */
   async function toSuggestions(
     outletId: string,
+    language: Language,
     raw: readonly RawSuggestion[],
     violations: PolicyViolation[],
     onResolved: (item: MenuItemSummary) => void,
@@ -217,7 +223,7 @@ export function createConversationService(
     const suggestions: MenuSuggestion[] = [];
 
     for (const entry of raw) {
-      const resolved = await resolveRef(outletId, entry.menuItemRef);
+      const resolved = await resolveRef(outletId, language, entry.menuItemRef);
       if (resolved.state !== 'resolved') {
         violations.push({
           kind:
@@ -242,11 +248,12 @@ export function createConversationService(
 
   async function executeReadOnlyTool(
     outletId: string,
+    language: Language,
     call: ValidatedToolCall,
     onResolved: (item: MenuItemSummary) => void,
   ): Promise<{ readonly payload: unknown; readonly resultCount: number }> {
     if (call.name === 'menu_search') {
-      const items = await menu.search(outletId, call.query, call.limit);
+      const items = await menu.search(outletId, call.query, call.limit, language);
       // Only fields the model is allowed to talk about are handed back.
       const payload = items.map((item) => ({
         menuItemId: item.id,
@@ -263,7 +270,7 @@ export function createConversationService(
 
     const item =
       call.name === 'menu_item_details'
-        ? await menu.getById(outletId, call.menuItemId)
+        ? await menu.getById(outletId, call.menuItemId, language)
         : undefined;
     if (item !== undefined) onResolved(item);
 
@@ -393,6 +400,7 @@ export function createConversationService(
         for (const call of lookups) {
           const { payload, resultCount } = await executeReadOnlyTool(
             request.outletId,
+            request.language,
             call,
             remember,
           );
@@ -450,6 +458,7 @@ export function createConversationService(
     for (const proposal of proposals) {
       const action = await toDraftAction(
         request.outletId,
+        request.language,
         proposal,
         violations,
         remember,
@@ -459,6 +468,7 @@ export function createConversationService(
 
     const resolvedSuggestions = await toSuggestions(
       request.outletId,
+      request.language,
       rawSuggestions,
       violations,
       remember,

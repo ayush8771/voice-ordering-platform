@@ -81,6 +81,58 @@ describe('menu lookup getById', () => {
     expect(await lookup().getById('demo-outlet', 'item-poha')).toBeUndefined();
     expect(await lookup().getById('demo-outlet', 'nope')).toBeUndefined();
   });
+
+  it('returns the name in the requested language', async () => {
+    expect((await lookup().getById('demo-outlet', 'item-idli', 'kn'))?.name).toBe(
+      'ಇಡ್ಲಿ',
+    );
+    expect((await lookup().getById('demo-outlet', 'item-idli', 'hi'))?.name).toBe(
+      'इडली',
+    );
+    // Untranslated: English, not a blank.
+    expect(
+      (await lookup().getById('demo-outlet', 'item-cold-coffee', 'kn'))?.name,
+    ).toBe('Cold Coffee');
+  });
+});
+
+describe('multilingual menu lookup', () => {
+  it('finds an item by its Kannada name', async () => {
+    const results = await lookup().search('demo-outlet', 'ಮಸಾಲೆ ದೋಸೆ', 5, 'kn');
+
+    expect(results.map((item) => item.id)).toEqual(['item-masala-dosa']);
+    // The model is handed the words the customer used.
+    expect(results[0]?.name).toBe('ಮಸಾಲೆ ದೋಸೆ');
+  });
+
+  it('finds an item by its Hindi name', async () => {
+    const results = await lookup().search('demo-outlet', 'मसाला डोसा', 5, 'hi');
+
+    expect(results.map((item) => item.id)).toEqual(['item-masala-dosa']);
+    expect(results[0]?.name).toBe('मसाला डोसा');
+  });
+
+  it('still resolves the English name inside a non-English session', async () => {
+    // Code-switched speech is the norm ("two dosa, ಒಂದು ಕಾಫಿ"), so the
+    // canonical name is matched alongside the translated one.
+    const results = await lookup().search('demo-outlet', 'masala dosa', 5, 'kn');
+
+    expect(results.map((item) => item.id)).toEqual(['item-masala-dosa']);
+    expect(results[0]?.name).toBe('ಮಸಾಲೆ ದೋಸೆ');
+  });
+
+  it('does not match another language than the one asked for', async () => {
+    // A Hindi session must not resolve a Kannada name it cannot have heard.
+    expect(await lookup().search('demo-outlet', 'ಮಸಾಲೆ ದೋಸೆ', 5, 'hi')).toEqual([]);
+    expect(await lookup().search('demo-outlet', 'ಮಸಾಲೆ ದೋಸೆ', 5)).toEqual([]);
+  });
+
+  it('ranks a translated exact match above a translated prefix match', async () => {
+    // "ಇಡ್ಲಿ" is also a prefix of nothing else translated, so this pins the
+    // English half of the same rule: an exact hit is never ambiguous.
+    const results = await lookup().search('demo-outlet', 'ಇಡ್ಲಿ', 5, 'kn');
+    expect(results.map((item) => item.id)).toEqual(['item-idli']);
+  });
 });
 
 describe('conversation service over the real menu lookup', () => {
@@ -131,6 +183,57 @@ describe('conversation service over the real menu lookup', () => {
       },
     ]);
     expect(result.violations).toEqual([]);
+  });
+
+  it('resolves a Kannada item name spoken in a Kannada turn', async () => {
+    const service = conversation(
+      modelReply({
+        reply: 'ಎರಡು ಮಸಾಲೆ ದೋಸೆ ಸೇರಿಸಿದೆ.',
+        toolCalls: [
+          {
+            name: 'propose_draft_update',
+            arguments: {
+              type: 'addItem',
+              menuItemRef: 'ಮಸಾಲೆ ದೋಸೆ',
+              quantity: 2,
+            },
+          },
+        ],
+      }),
+    );
+
+    const result = await service.handleTurn({
+      ...turn,
+      language: 'kn',
+      text: 'ಎರಡು ಮಸಾಲೆ ದೋಸೆ',
+    });
+
+    expect(result.draftActions).toEqual([
+      { type: 'addItem', menuItemId: 'item-masala-dosa', quantity: 2 },
+    ]);
+    expect(result.violations).toEqual([]);
+  });
+
+  it('hands the model menu search results in the turn language', async () => {
+    const menuService = createMenuService(createInMemoryMenuRepository(SAMPLE_MENU));
+    const provider = createFakeProvider([
+      modelReply({
+        toolCalls: [{ name: 'menu_search', arguments: { query: 'ಇಡ್ಲಿ' } }],
+      }),
+      modelReply({ reply: 'ಇಡ್ಲಿ ಇದೆ.' }),
+    ]);
+    const service = createConversationService({
+      provider,
+      menu: createMenuLookup(menuService),
+      log: () => {},
+    });
+
+    await service.handleTurn({ ...turn, language: 'kn', text: 'ಇಡ್ಲಿ ಇದೆಯಾ' });
+
+    const messages = provider.calls[1]?.messages ?? [];
+    const toolResult = messages[messages.length - 1]?.content ?? '';
+    expect(toolResult).toContain('item-idli');
+    expect(toolResult).toContain('ಇಡ್ಲಿ');
   });
 
   it('refuses a sold-out item the model proposed', async () => {

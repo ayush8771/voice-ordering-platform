@@ -9,6 +9,11 @@
  * all here now. Payment-provider shapes are deliberately still absent: no
  * provider is selected.
  *
+ * The multilingual content contract (en/kn/hi) is additive throughout: a
+ * request that names no language is served exactly as before, every response
+ * string is already resolved into one language, and the canonical English name
+ * stays on every snapshot alongside the localized one.
+ *
  * Three additions need Ayush/Anvesh sign-off because docs/API.md does not
  * describe them: menu categories, the `Authorization: Bearer <sessionId>`
  * session transport, and the 422-versus-409 split for invalid versus
@@ -96,6 +101,35 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 export const LANGUAGES = ['en', 'kn', 'hi'] as const;
 export type Language = (typeof LANGUAGES)[number];
 
+/**
+ * The language every endpoint falls back to, and the language a request that
+ * names none is served in.
+ *
+ * `en` is also the *canonical* language: a stored menu string is English, and a
+ * translation is an optional overlay on it. That is what keeps this addition
+ * backward compatible - a client that never sends a language sees exactly what
+ * it saw before.
+ */
+export const DEFAULT_LANGUAGE: Language = 'en';
+
+/**
+ * Translations for one piece of content, as an overlay on its English base.
+ *
+ * `en` is deliberately not a key: the base field *is* English, so there is no
+ * second place an English string can live and no way for the two to disagree.
+ * Every field is optional because partial translation is the normal state of a
+ * merchant's menu, and resolution falls back per field (docs/API.md menu
+ * section).
+ */
+export type Translations<Field extends string> = Partial<
+  Record<Exclude<Language, 'en'>, Partial<Record<Field, string>>>
+>;
+
+export type MenuItemTranslations = Translations<'name' | 'description'>;
+export type MenuOptionTranslations = Translations<'label'>;
+export type MenuCategoryTranslations = Translations<'name'>;
+export type OutletTranslations = Translations<'name'>;
+
 /** Reported dependency reachability. 'unconfigured' is not a failure. */
 export type DependencyState = 'ok' | 'unreachable' | 'unconfigured';
 
@@ -117,6 +151,12 @@ export const API_BASE_PATH = '/api/v1';
 
 // ---------------------------------------------------------------------------
 // Menu contracts (`GET /api/v1/outlets/{outletId}/menu`)
+//
+// Every customer-facing string below is **already resolved** into one
+// language: a client never receives a translation map and never resolves
+// anything itself. The language is chosen with `?lang=` and echoed as
+// `MenuResponse.language`; an untranslated field falls back to English, per
+// field (docs/API.md menu section).
 // ---------------------------------------------------------------------------
 
 /**
@@ -169,8 +209,22 @@ export interface MenuResponse {
    * Opaque fingerprint of the priced, available menu. It changes whenever any
    * price, availability or option changes, and is echoed by a quote so a stale
    * quote is detectable at confirmation.
+   *
+   * **Language-independent by construction**: it is derived from prices,
+   * availability, options and the canonical English text only, so translating
+   * an item cannot move it. Were it otherwise, a merchant fixing a Kannada
+   * typo would turn every in-flight quote into a `409` "re-confirm" for a
+   * change that altered no price (docs/API.md menu section).
    */
   readonly menuVersion: string;
+  /** The language the strings in this response are in. Echoes the request. */
+  readonly language: Language;
+  /**
+   * Fingerprint of the *displayed text* in this language, for caching only.
+   * It changes when any translation in this language changes - including when
+   * one is added or removed - and never gates an order.
+   */
+  readonly contentVersion: string;
   readonly categories: readonly MenuCategory[];
   readonly items: readonly MenuItem[];
 }
@@ -225,7 +279,17 @@ export interface QuoteRequest {
 /** One priced line. Every money field is server-calculated. */
 export interface QuoteLine {
   readonly menuItemId: string;
+  /**
+   * Canonical English name, snapshotted from the menu. Unchanged by language,
+   * so a kitchen ticket and a merchant report read the same whatever the
+   * customer ordered in.
+   */
   readonly name: string;
+  /**
+   * The same name in the quote's language, for the review screen the customer
+   * confirms from. Equal to `name` when the item is not translated.
+   */
+  readonly displayName: string;
   readonly quantity: number;
   readonly optionIds: readonly string[];
   /** Item price plus the selected option deltas, for one unit. */
@@ -237,6 +301,13 @@ export interface QuoteResponse {
   readonly quoteId: string;
   readonly outletId: string;
   readonly menuVersion: string;
+  /**
+   * The language this quote's display names are in - the language the customer
+   * reviewed in. `POST /api/v1/orders` takes the order's checkout language
+   * from here rather than from the confirming request, so what is recorded is
+   * what the customer actually saw.
+   */
+  readonly language: Language;
   /** Lines in the order submitted. Identical lines are not merged. */
   readonly items: readonly QuoteLine[];
   readonly subtotalMinor: number;
@@ -292,8 +363,17 @@ export interface CartLine {
   /** Stable handle for updating or removing this line. Opaque to the client. */
   readonly lineId: string;
   readonly menuItemId: string;
-  /** Snapshotted from the menu, never echoed from the client. */
+  /**
+   * Canonical English name, snapshotted from the menu on every read and never
+   * echoed from the client.
+   */
   readonly name: string;
+  /**
+   * The same name in the language this draft was read in (`?lang=`), or the
+   * language of the conversational turn that returned it. Equal to `name` when
+   * the item is not translated.
+   */
+  readonly displayName: string;
   readonly quantity: number;
   readonly optionIds: readonly string[];
   /**
@@ -370,8 +450,18 @@ export const MAX_IDEMPOTENCY_KEY_CHARS = 128;
 /** One immutable ordered line. Prices are the ones calculated at order time. */
 export interface OrderItem {
   readonly menuItemId: string;
-  /** Item name as it stood when the order was accepted. */
+  /**
+   * Canonical English item name as it stood when the order was accepted. This
+   * is the operational record: staff and kitchen read it whatever language the
+   * customer ordered in.
+   */
   readonly nameAtOrder: string;
+  /**
+   * The same name in the order's `checkoutLanguage`, frozen at acceptance, so
+   * a customer tracking their order still reads it in the language they
+   * ordered in. Equal to `nameAtOrder` when the item was not translated.
+   */
+  readonly displayNameAtOrder: string;
   readonly quantity: number;
   readonly optionIds: readonly string[];
   readonly unitPriceMinor: number;
@@ -391,6 +481,12 @@ export interface OrderResponse {
   readonly outletId: string;
   readonly channel: Channel;
   readonly orderStatus: OrderStatus;
+  /**
+   * The language the customer confirmed in, taken from the quote rather than
+   * from the confirming request. It is a record of what the customer saw, not
+   * a display preference a later request may change.
+   */
+  readonly checkoutLanguage: Language;
   readonly paymentMethod: PaymentMethod;
   /**
    * `'dueAtCounter'` for cash, `'pending'` for UPI. Never `'verified'` here:
