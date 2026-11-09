@@ -49,19 +49,32 @@ Items 7, 8 and 10 remain uncovered because the payment callback and the staff/me
 
 ## 4. Tools, commands, coverage
 
-**Unit/integration tools:** Vitest (configured in `backend/` and `shared/`), with Supertest for HTTP-level API tests and `mongodb-memory-server` for the MongoDB integration tests described in section 2. **E2E tooling:** still undecided; no browser-driver dependency has been added.
+**Unit/integration tools:** Vitest (configured in `backend/`, `shared/` and `frontend/`), with Supertest for HTTP-level API tests and `mongodb-memory-server` for the MongoDB integration tests described in section 2. **E2E tooling:** still undecided; no browser-driver dependency has been added.
 
 **Commands** (run from the repository root):
 
 | Command | Scope |
 |---|---|
-| `npm test` | Vitest across workspaces that define tests (`shared/`, `backend/`). Includes the MongoDB integration files; see section 2 for the first-run binary download |
+| `npm test` | Vitest across workspaces that define tests (`shared/`, `backend/`, `frontend/`). Includes the MongoDB integration files; see section 2 for the first-run binary download |
 | `npm run typecheck` | Strict `tsc --noEmit` for `shared`, `backend`, `frontend` |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier check |
 | `npm run build` | Shared contracts, backend compile, frontend production build |
 
 Current coverage is foundation, provider, conversation, ordering and MongoDB-integration level.
+
+Frontend tests are logic-only and run in Vitest's default Node environment: no
+DOM, renderer or browser-driver dependency has been added, so component
+rendering is not covered. They stub `fetch` and assert what the server
+authorizes on - that public reads carry no `Authorization` header, that the
+session bearer is sent on session-scoped calls, that a seen draft revision
+travels as `If-Match` and is absent when not supplied, that a line ID is
+escaped into the path, that confirmation carries the `Idempotency-Key` and a
+literal `customerConfirmed: true`, that tracking uses the order's token rather
+than the session, and that an unreachable server is reported without implying
+the call was applied - plus the display rules: checkout blocked while any line
+is unavailable or the draft is empty, a plain-language message for every
+`CartLineIssue`, and minor-unit formatting.
 
 MongoDB integration (against a real `mongod`): index creation, idempotent
 re-creation, and that each unique constraint actually rejects a duplicate while

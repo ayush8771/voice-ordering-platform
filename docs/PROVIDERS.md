@@ -12,6 +12,8 @@
 
 The providers are independent. A provider-specific failure must not block touch ordering. The public/client app never receives any provider credential.
 
+**Client-side speech boundary (declarations only).** `frontend/src/audio/types.ts` declares `AudioCapture`, `SpeechToTextClient` and `TextToSpeechClient`: the browser owns microphone permission and capture, and Prisma/Timbre are reached only through backend routes, so no key can reach a bundle. Those routes do not exist and the Gnani schemas are unverified, so the interfaces invent no provider field, audio format or error shape, nothing implements them, and no client call is made. The customer surface therefore ships touch-and-type, and an absent speech client renders as "voice input is not available in this build".
+
 ## Sarvam 105B Conversations facts verified from official documentation
 
 Everything in this section is **verified**. Anything not listed here is **unverified** and must not be assumed by code: see [Unverified and deferred](#unverified-and-deferred-sarvam-behaviour).

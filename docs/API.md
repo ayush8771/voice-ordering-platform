@@ -223,6 +223,8 @@ The adapter implementing these facts exists (`backend/src/providers/sarvam`); th
 
 ## Speech adapter boundary (provider contract unverified)
 
+**Client side as implemented:** `frontend/src/audio/types.ts` declares the capture, STT and TTS interfaces the UI needs (audio in → text; text in → audio) and nothing else: no implementation, no provider field, no encoding, no error shape, and no call. A transcript, once one exists, is sent as the `text` of an ordinary `POST /api/v1/conversation/turns`, so no new client-visible contract is needed for voice. Until the backend speech routes are specified, the customer surface runs touch-and-type and treats a missing speech client as "voice unavailable".
+
 Voice input must produce a draft intent/transcript result, never an order or payment transition. Any internal endpoint must enforce session scope, request limits, consent, and redacted logging. Confirm Gnani Prisma/Timbre official request/response schemas, language codes, audio formats, streaming behavior, limits, latency, retention, and error semantics before specifying a wire contract. Keep those payloads out of this provisional public API. Speech provider choice remains independent of the conversational LLM choice.
 
 ## Contract tests

@@ -107,7 +107,10 @@ backend/src/services/menu          menu authority, repository, lookup port impl
 backend/src/services/quote         server-authoritative pricing
 backend/src/services/cart          per-session draft cart
 backend/src/services/sessions      anonymous ordering sessions
-frontend/src/{api,components,pages,styles}
+frontend/src/api              typed API client: the only place the client calls the API
+frontend/src/customer         customer ordering flow (hook, surface, display rules)
+frontend/src/audio            speech interfaces, declarations only (no provider call)
+frontend/src/{components,pages,styles}
 shared/src                      contracts depended on by both sides
 ```
 
@@ -172,6 +175,28 @@ referent) is in-memory and per session; persistence and retention remain open
 decisions. Because it is keyed by session ID and bound to the session's outlet,
 it is isolated like every other per-session resource, and it holds no money and
 no model text - only items resolved from backend menu data.
+
+**As implemented: customer frontend integration.** The client is layered so that
+only `frontend/src/api/client.ts` performs a request: it holds the ordering
+session bearer (module state mirrored into per-tab `sessionStorage`, never a URL
+or a log), sends `If-Match` for a draft change aimed at a line the customer has
+seen, sends the per-attempt `Idempotency-Key` on confirmation, and uses the
+order's own read capability - not the session - for tracking, which is what
+keeps tracking alive after the 30-minute session expires. `customer/useOrdering.ts`
+holds the flow (session, menu, draft, quote, confirmation, tracking poll) and
+translates `401` into "session ended, restart" and `409` into a re-read of the
+draft rather than an overwrite of the other surface's edit. `customer/cartRules.ts`
+is the only display logic: it formats server amounts and decides why checkout is
+blocked. No component computes a price, a total or an availability flag, and the
+only call that creates an order is made from an explicit "Confirm order" press.
+
+The conversational path is one more call to the same backend route, so typed
+text and a future transcript travel identically. Speech itself is interfaces
+only (`frontend/src/audio/types.ts`): capture in the browser, STT and TTS behind
+backend routes that do not exist yet, so no provider credential or unverified
+Gnani wire shape reaches the client. With no speech client supplied - the state
+this milestone ships in - the surface is touch-and-type, and a `503` from the
+assistant switches it to touch-only with the draft intact.
 
 ## 8. Key decisions and unresolved items
 
