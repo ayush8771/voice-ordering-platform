@@ -304,6 +304,16 @@
   flex: 0 0 auto;
 }
 
+/*
+ * The typed-request Send button sits beside a growing input. Without this it
+ * shrinks to its min-width and the inherited `overflow-wrap: anywhere` splits
+ * short labels mid-word (seen with Hindi "भेजें" on the kiosk).
+ */
+.vop-search__row > .vop-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .vop-menu-results {
   scroll-margin-top: calc(var(--control-min) + var(--space-6));
 }
