@@ -1,0 +1,387 @@
+/**
+ * Customer payment step and payment status (docs/DESIGN_SYSTEM.md).
+ * Builds on ordering.css (`.vop-card`, `.vop-choice`, `.vop-button`, …) and
+ * only adds `vop-pay-` classes, so it cannot change the menu, cart, kiosk or
+ * merchant screens. Mobile-first; values come from tokens.css. Payment state
+ * is always written as text; colour only reinforces it.
+ */
+
+.vop-pay-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: inherit;
+  font-weight: 700;
+}
+
+/* --- Progress ----------------------------------------------------------- */
+
+.vop-pay-progress {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-secondary);
+}
+
+.vop-pay-progress__step {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-top: var(--space-2);
+  border-top: 3px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.vop-pay-progress__step--done,
+.vop-pay-progress__step--current {
+  border-top-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.vop-pay-progress__step--current {
+  font-weight: 700;
+}
+
+.vop-pay-progress__dot {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.6em;
+  height: 1.6em;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-weight: 700;
+}
+
+.vop-pay-progress__step--done .vop-pay-progress__dot,
+.vop-pay-progress__step--current .vop-pay-progress__dot {
+  border-color: var(--color-primary-strong);
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+/* --- Summary ------------------------------------------------------------ */
+
+.vop-pay-summary {
+  margin-bottom: var(--space-4);
+}
+
+.vop-pay-summary__count {
+  font-weight: 400;
+  font-size: var(--font-size-secondary);
+}
+
+.vop-pay-summary__lines .vop-review-line {
+  margin-bottom: var(--space-2);
+}
+
+.vop-pay-payable {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  font-size: 1.25em;
+  font-weight: 700;
+}
+
+/* --- Method choice ------------------------------------------------------ */
+
+.vop-pay-methods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.vop-pay-methods legend {
+  width: 100%;
+  padding: 0;
+}
+
+/* Doubled class: ordering.css loads after this file and sets `.vop-choice`. */
+.vop-choice.vop-pay-method {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-3);
+}
+
+.vop-choice.vop-pay-method--locked {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.vop-choice.vop-pay-method input {
+  flex: 0 0 auto;
+  margin-top: 0.15em;
+}
+
+.vop-pay-method:focus-within {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.vop-pay-method__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.vop-pay-method__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  font-weight: 700;
+}
+
+.vop-pay-method__summary {
+  font-size: var(--font-size-secondary);
+}
+
+.vop-pay-tag {
+  display: inline-block;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: var(--font-size-secondary);
+  font-weight: 600;
+}
+
+.vop-pay-tag--neutral {
+  color: var(--color-text-muted);
+}
+
+/* --- Instructions and UPI area ------------------------------------------ */
+
+.vop-pay-instructions {
+  margin-bottom: var(--space-4);
+}
+
+.vop-pay-steps {
+  margin: var(--space-3) 0 0;
+  padding-left: 1.4em;
+}
+
+.vop-pay-steps li + li {
+  margin-top: var(--space-1);
+}
+
+.vop-pay-upi {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.vop-pay-upi__text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.vop-pay-upi__text p {
+  margin: 0;
+}
+
+/* An empty frame the size a real QR would need; deliberately not a code. */
+.vop-pay-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: min(200px, 70%);
+  aspect-ratio: 1;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  color: var(--color-text-muted);
+}
+
+.vop-pay-qr__label {
+  font-weight: 700;
+}
+
+.vop-pay-qr__note {
+  font-size: var(--font-size-secondary);
+}
+
+.vop-pay-upi--compact {
+  margin-top: var(--space-3);
+}
+
+.vop-pay-upi--compact .vop-pay-qr {
+  width: min(120px, 40%);
+}
+
+@media (min-width: 600px) {
+  .vop-pay-upi {
+    flex-direction: row;
+    align-items: center;
+    text-align: left;
+  }
+
+  .vop-pay-upi__text {
+    align-items: flex-start;
+  }
+
+  .vop-pay-qr {
+    flex: 0 0 auto;
+    width: 180px;
+  }
+
+  .vop-pay-upi--compact .vop-pay-qr {
+    width: 112px;
+  }
+}
+
+/* --- Confirmation notice ------------------------------------------------ */
+
+.vop-pay-notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.vop-pay-select-hint {
+  margin: var(--space-2) 0 0;
+}
+
+/* --- Payment state card ------------------------------------------------- */
+
+.vop-pay-state {
+  border-left-width: 6px;
+}
+
+.vop-pay-state--neutral {
+  border-left-color: var(--color-border);
+}
+
+.vop-pay-state--pending {
+  border-left-color: var(--color-warning);
+}
+
+.vop-pay-state--success {
+  border-left-color: var(--color-success);
+}
+
+.vop-pay-state--error {
+  border-left-color: var(--color-error);
+}
+
+.vop-pay-state__label {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-secondary);
+}
+
+.vop-pay-state__title {
+  margin: var(--space-1) 0;
+  font-size: 1.15em !important;
+}
+
+.vop-pay-state--pending .vop-pay-state__title {
+  color: var(--color-warning);
+}
+
+.vop-pay-state--success .vop-pay-state__title {
+  color: var(--color-success);
+}
+
+.vop-pay-state--error .vop-pay-state__title {
+  color: var(--color-error);
+}
+
+.vop-pay-state__body {
+  margin: 0;
+}
+
+.vop-pay-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: var(--space-3) 0 0;
+}
+
+.vop-pay-facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-secondary);
+}
+
+.vop-pay-facts dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.vop-pay-hint {
+  margin: var(--space-3) 0 0;
+}
+
+/* --- Order vs payment on the tracking screen ---------------------------- */
+
+.vop-pay-order-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+
+.vop-pay-order-state .vop-pay-tag {
+  color: var(--color-success);
+}
+
+.vop-pay-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+/* --- Development preview ------------------------------------------------ */
+
+.vop-pay-preview-banner {
+  padding: var(--space-3) var(--space-4);
+  border-left: 4px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.vop-pay-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.vop-pay-preview__source {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-muted);
+}
+
+.vop-pay-preview__source--placeholder {
+  color: var(--color-warning);
+  font-weight: 700;
+}

@@ -1,0 +1,631 @@
+/**
+ * Merchant dashboard layout. All values come from tokens.css; class names are
+ * prefixed `vop-m-` so nothing here can affect the customer surfaces.
+ *
+ *   < 900px   compact: brand + horizontal nav on top, content below
+ *   >= 900px  sidebar navigation beside the content
+ */
+
+.vop-m {
+  min-height: 100vh;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+}
+
+.vop-m h1,
+.vop-m h2 {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.vop-m h1 {
+  font-size: 1.5em;
+}
+
+.vop-m h2 {
+  font-size: 1.05em;
+}
+
+.vop-m p {
+  margin: 0;
+}
+
+.vop-m-muted {
+  color: var(--color-text-muted);
+}
+
+/* --- Shell -------------------------------------------------------------- */
+
+.vop-m-sidebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.vop-m-brand__name {
+  font-weight: 700;
+}
+
+.vop-m-brand__outlet,
+.vop-m-identity__note {
+  font-size: var(--font-size-secondary);
+}
+
+.vop-m-nav {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vop-m-sidebar nav {
+  order: 3;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.vop-m-nav__link {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.vop-m-nav__link:hover {
+  background: var(--color-background);
+}
+
+.vop-m-nav__link[aria-current='page'] {
+  background: var(--color-primary);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.vop-m-nav__link:focus-visible,
+.vop-m-button:focus-visible,
+.vop-m-chip:focus-visible,
+.vop-m-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.vop-m-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.vop-m-identity > span:last-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.vop-m-identity__name {
+  font-weight: 600;
+}
+
+.vop-m-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.25em;
+  height: 2.25em;
+  border-radius: 50%;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  font-weight: 700;
+}
+
+.vop-m-main {
+  max-width: 1200px;
+  padding: var(--space-4);
+  min-width: 0;
+}
+
+.vop-m-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.vop-m-footer {
+  margin-top: var(--space-8);
+}
+
+@media (min-width: 900px) {
+  .vop-m {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .vop-m-sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: var(--space-6);
+    padding: var(--space-6) var(--space-4);
+    border-bottom: 0;
+    border-right: 1px solid var(--color-border);
+  }
+
+  .vop-m-sidebar nav {
+    order: 0;
+    flex: 1 1 auto;
+  }
+
+  .vop-m-nav {
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .vop-m-identity {
+    margin-left: 0;
+  }
+
+  .vop-m-main {
+    padding: var(--space-6);
+  }
+}
+
+/* --- Building blocks ---------------------------------------------------- */
+
+.vop-m-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.vop-m-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.vop-m-button--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary-strong);
+  color: #ffffff;
+}
+
+.vop-m-button:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-muted);
+  background: var(--color-background);
+  border-style: dashed;
+}
+
+.vop-m-soon {
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: var(--font-size-secondary);
+}
+
+.vop-m-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.vop-m-chip[aria-pressed='true'] {
+  background: var(--color-primary);
+  border-color: var(--color-primary-strong);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.vop-m-chip__count {
+  min-width: 1.5em;
+  padding: 0 var(--space-1);
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: var(--font-size-secondary);
+  text-align: center;
+}
+
+.vop-m-toggle,
+.vop-m-filters {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.vop-m-filters {
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.vop-m-link {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.vop-m-banner {
+  margin: 0 0 var(--space-4) !important;
+  padding: var(--space-3) var(--space-4);
+  border-left: 4px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.vop-m-note {
+  margin-bottom: var(--space-3) !important;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-secondary);
+}
+
+.vop-m-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.vop-m-toolbar .vop-m-note {
+  margin: 0 !important;
+  flex: 1 1 300px;
+}
+
+/* Badges: words carry the meaning; colour is a second cue. */
+.vop-m-badge {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: var(--font-size-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
+.vop-m-badge--accepted,
+.vop-m-badge--pay-pending,
+.vop-m-badge--pay-dueAtCounter {
+  color: var(--color-warning);
+}
+
+.vop-m-badge--preparing {
+  color: var(--color-accent);
+}
+
+.vop-m-badge--ready,
+.vop-m-badge--pay-verified {
+  color: var(--color-success);
+}
+
+.vop-m-badge--collected,
+.vop-m-badge--pay-refunded {
+  color: var(--color-text-muted);
+}
+
+.vop-m-badge--cancelled,
+.vop-m-badge--pay-failed {
+  color: var(--color-error);
+}
+
+.vop-m-state__title {
+  font-weight: 700;
+  margin-bottom: var(--space-1) !important;
+}
+
+.vop-m-state__body {
+  color: var(--color-text-muted);
+}
+
+.vop-m-state__action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.vop-m-state--warning {
+  border-left: 4px solid var(--color-warning);
+}
+
+.vop-m-state--error {
+  border-left: 4px solid var(--color-error);
+}
+
+.vop-m-token {
+  font-weight: 700;
+}
+
+.vop-m-amount {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* --- Overview ----------------------------------------------------------- */
+
+.vop-m-summaries {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+@media (min-width: 900px) {
+  .vop-m-summaries {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.vop-m-summary__label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-secondary);
+}
+
+.vop-m-summary__value {
+  margin-top: var(--space-1) !important;
+  font-size: 1.6em;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.vop-m-summary__hint {
+  margin-top: var(--space-1) !important;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-secondary);
+}
+
+.vop-m-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (min-width: 1100px) {
+  .vop-m-columns {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.vop-m-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.vop-m-columns h2 {
+  margin-bottom: var(--space-3);
+}
+
+.vop-m-section-head h2 {
+  margin-bottom: 0;
+}
+
+.vop-m-recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vop-m-recent li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'token meta amount'
+    'badges badges badges';
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.vop-m-recent li > .vop-m-token {
+  grid-area: token;
+}
+.vop-m-recent__meta {
+  grid-area: meta;
+  color: var(--color-text-muted);
+}
+.vop-m-recent li > .vop-m-amount {
+  grid-area: amount;
+}
+.vop-m-recent__badges {
+  grid-area: badges;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (min-width: 600px) {
+  .vop-m-recent li {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: 'token meta badges amount';
+  }
+}
+
+.vop-m-bars {
+  margin: 0;
+}
+
+.vop-m-bar {
+  display: grid;
+  grid-template-columns: 7em minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.vop-m-bar dd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.vop-m-bar__fill {
+  display: block;
+  height: 0.6em;
+  min-width: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.vop-m-bar__value {
+  font-weight: 600;
+}
+
+/* --- Orders ------------------------------------------------------------- */
+
+.vop-m-orders {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media (min-width: 1100px) {
+  .vop-m-orders {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.vop-m-order {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.vop-m-order__head,
+.vop-m-order__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-3);
+}
+
+.vop-m-order__head .vop-m-muted {
+  font-size: var(--font-size-secondary);
+}
+
+.vop-m-order__items {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.vop-m-order__items li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+.vop-m-order__foot {
+  align-items: center;
+  margin-top: auto;
+}
+
+.vop-m-order__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--font-size-secondary);
+}
+
+/* --- Menu management ---------------------------------------------------- */
+
+.vop-m-menu-section {
+  margin-bottom: var(--space-4);
+}
+
+.vop-m-menu {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+.vop-m-menu__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main amount'
+    'badge badge'
+    'actions actions';
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.vop-m-menu__main {
+  grid-area: main;
+}
+.vop-m-menu__item > .vop-m-amount {
+  grid-area: amount;
+}
+.vop-m-menu__item > .vop-m-badge {
+  grid-area: badge;
+  justify-self: start;
+}
+.vop-m-menu__actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (min-width: 900px) {
+  .vop-m-menu__item {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-areas: 'main amount badge actions';
+  }
+}
+
+.vop-m-menu__name {
+  font-weight: 700;
+}
+
+.vop-m-menu__options {
+  margin-top: var(--space-1) !important;
+  font-size: var(--font-size-secondary);
+}

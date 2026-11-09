@@ -12,6 +12,7 @@ import type {
 } from '@vop/shared';
 import * as api from '../api/client';
 import { ApiRequestError } from '../api/client';
+import { classifyConfirmFailure } from './confirmOutcome';
 
 /**
  * The customer ordering flow, as one hook: session, menu, draft, quote,
@@ -28,7 +29,7 @@ import { ApiRequestError } from '../api/client';
  */
 
 /** Which screen the customer is on. Drives the conversational `phase`. */
-export type Step = 'ordering' | 'review' | 'tracking';
+export type Step = 'ordering' | 'review' | 'payment' | 'tracking';
 
 export interface OrderingState {
   readonly step: Step;
@@ -36,6 +37,8 @@ export interface OrderingState {
   readonly cart: CartResponse | undefined;
   readonly quote: QuoteResponse | undefined;
   readonly order: OrderResponse | undefined;
+  /** When the order was last read successfully from the server. */
+  readonly orderUpdatedAt: Date | undefined;
   readonly language: Language;
   /** Set when the server said the assistant is unavailable for this session. */
   readonly assistantUnavailable: boolean;
@@ -46,6 +49,12 @@ export interface OrderingState {
   readonly sessionLost: boolean;
   readonly busy: boolean;
   readonly startupFailed: boolean;
+  /**
+   * Set when a confirmation may have reached the server without an answer
+   * (network failure or 5xx). A retry must resend the same payload under the
+   * same idempotency key, so the payment choice is fixed until it resolves.
+   */
+  readonly lockedPaymentMethod: PaymentMethod | undefined;
 }
 
 const POLL_INTERVAL_MS = 15_000;
@@ -73,6 +82,7 @@ export function useOrdering(outletId: string, channel: Channel) {
     cart: undefined,
     quote: undefined,
     order: undefined,
+    orderUpdatedAt: undefined,
     language: 'en',
     assistantUnavailable: false,
     lastAssistantText: undefined,
@@ -80,6 +90,7 @@ export function useOrdering(outletId: string, channel: Channel) {
     sessionLost: false,
     busy: true,
     startupFailed: false,
+    lockedPaymentMethod: undefined,
   });
 
   /**
@@ -87,6 +98,14 @@ export function useOrdering(outletId: string, channel: Channel) {
    * a retry cannot create a second order (docs/UX_FLOWS.md flow 3).
    */
   const idempotencyKey = useRef<string | undefined>(undefined);
+  /** Payment method last sent under `idempotencyKey`, if any. */
+  const attemptMethod = useRef<PaymentMethod | undefined>(undefined);
+
+  /** Starts a fresh confirmation attempt: new key, no method sent yet. */
+  const newAttempt = useCallback((): void => {
+    idempotencyKey.current = crypto.randomUUID();
+    attemptMethod.current = undefined;
+  }, []);
 
   const patch = useCallback((next: Partial<OrderingState>): void => {
     setState((current) => ({ ...current, ...next }));
@@ -149,8 +168,10 @@ export function useOrdering(outletId: string, channel: Channel) {
         cart,
         quote: undefined,
         order: undefined,
+        orderUpdatedAt: undefined,
         step: 'ordering',
         sessionLost: false,
+        lockedPaymentMethod: undefined,
         busy: false,
       });
     } catch (error) {
@@ -211,53 +232,174 @@ export function useOrdering(outletId: string, channel: Channel) {
 
   /** Quotes the stored draft and opens review. A fresh attempt, a fresh key. */
   const openReview = useCallback(() => {
-    idempotencyKey.current = crypto.randomUUID();
+    newAttempt();
     return run(
       () => api.quoteCart(),
-      (quote) => ({ quote, step: 'review' as Step }),
+      (quote) => ({ quote, step: 'review' as Step, lockedPaymentMethod: undefined }),
     );
-  }, [run]);
+  }, [newAttempt, run]);
 
   const backToOrdering = useCallback(() => {
     patch({ step: 'ordering', quote: undefined, error: undefined });
   }, [patch]);
 
+  /**
+   * Moves from review to the payment choice. The quote and the confirmation
+   * attempt's idempotency key are kept: choosing how to pay is part of the
+   * same confirmation, and creates nothing.
+   */
+  const openPayment = useCallback(() => {
+    if (state.quote === undefined) {
+      patch({ error: 'Please review your order again before choosing how to pay.' });
+      return;
+    }
+    patch({ step: 'payment', error: undefined });
+  }, [patch, state.quote]);
+
+  const backToReview = useCallback(() => {
+    patch({ step: 'review', error: undefined });
+  }, [patch]);
+
+  /**
+   * Creates the order. Outcomes:
+   *  - success: tracking.
+   *  - 409/422: the server refused the quote (expired, menu or price change,
+   *    or a now-unavailable line). A matching earlier order under this key
+   *    would have been replayed instead, so no order exists: the draft is
+   *    re-quoted under a fresh key and the customer reviews it again.
+   *  - other 4xx: refused, nothing created; the customer may retry or go back.
+   *  - network failure or 5xx: the outcome is unknown. The key and the payment
+   *    method are kept so a retry replays rather than duplicates.
+   */
   const confirm = useCallback(
-    (paymentMethod: PaymentMethod) => {
+    async (paymentMethod: PaymentMethod): Promise<void> => {
       const quote = state.quote;
       if (quote === undefined) {
         patch({ error: 'Please review your order again before confirming.' });
-        return Promise.resolve();
+        return;
+      }
+      const sent = attemptMethod.current;
+      if (sent !== undefined && sent !== paymentMethod) {
+        patch({
+          error:
+            'Your last attempt may already have reached the outlet, so please retry with the same payment choice.',
+        });
+        return;
       }
       const key = idempotencyKey.current ?? crypto.randomUUID();
       idempotencyKey.current = key;
+      attemptMethod.current = paymentMethod;
 
-      return run(
-        () => api.createOrder({ outletId, quoteId: quote.quoteId, paymentMethod }, key),
-        (order) => ({ order, step: 'tracking' as Step, quote: undefined }),
-      );
+      patch({ busy: true, error: undefined });
+      try {
+        const order = await api.createOrder(
+          { outletId, quoteId: quote.quoteId, paymentMethod },
+          key,
+        );
+        attemptMethod.current = undefined;
+        patch({
+          order,
+          orderUpdatedAt: new Date(),
+          step: 'tracking',
+          quote: undefined,
+          lockedPaymentMethod: undefined,
+          busy: false,
+        });
+      } catch (error) {
+        const failure =
+          error instanceof ApiRequestError
+            ? classifyConfirmFailure(error.status, error.code)
+            : 'unknown';
+
+        if (failure === 'sessionLost') {
+          api.clearSessionId();
+          patch({ sessionLost: true, busy: false, error: messageOf(error) });
+          return;
+        }
+
+        if (failure === 'staleQuote') {
+          newAttempt();
+          try {
+            const fresh = await api.quoteCart();
+            patch({
+              quote: fresh,
+              step: 'review',
+              lockedPaymentMethod: undefined,
+              busy: false,
+              error:
+                'Your order was not placed: prices or availability changed. Please check the updated order and confirm again.',
+            });
+          } catch {
+            const cart = await api.getCart().catch(() => undefined);
+            patch({
+              ...(cart === undefined ? {} : { cart }),
+              quote: undefined,
+              step: 'ordering',
+              lockedPaymentMethod: undefined,
+              busy: false,
+              error:
+                'Your order was not placed because something on the menu changed. Please check your order.',
+            });
+          }
+          return;
+        }
+
+        if (failure === 'refused') {
+          // Refused outright; nothing was created under this key.
+          attemptMethod.current = undefined;
+          patch({
+            busy: false,
+            lockedPaymentMethod: undefined,
+            error: messageOf(error),
+          });
+          return;
+        }
+
+        patch({
+          busy: false,
+          lockedPaymentMethod: paymentMethod,
+          error: messageOf(error),
+        });
+      }
     },
-    [outletId, patch, run, state.quote],
+    [newAttempt, outletId, patch, state.quote],
   );
 
   // --- Tracking ------------------------------------------------------------
 
+  /**
+   * Whether this tab holds the read capability for the order on screen. The
+   * server issues it only on first creation; an idempotent replay (a retry
+   * after a lost response) omits it, and the order then cannot be re-read.
+   */
+  const orderId = state.order?.orderId;
+  const canTrackLive =
+    orderId !== undefined && api.getStoredOrderAccess()?.orderId === orderId;
+
   const refreshOrder = useCallback(async (): Promise<void> => {
     const access = api.getStoredOrderAccess();
-    if (access === undefined) return;
+    // Never apply another order's capability to the order on screen.
+    if (access === undefined || access.orderId !== orderId) {
+      patch({
+        error:
+          'Live status is not available for this order on this screen. Please watch for your token at the counter.',
+      });
+      return;
+    }
     try {
-      patch({ order: await api.getOrder(access) });
+      patch({ order: await api.getOrder(access), orderUpdatedAt: new Date() });
     } catch (error) {
       patch({ error: messageOf(error) });
     }
-  }, [patch]);
+  }, [orderId, patch]);
 
   useEffect(() => {
     const status = state.order?.orderStatus;
-    if (status === undefined || FINAL_STATUSES.includes(status)) return;
+    if (!canTrackLive || status === undefined || FINAL_STATUSES.includes(status))
+      return;
     const timer = window.setInterval(() => void refreshOrder(), POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [refreshOrder, state.order?.orderStatus]);
+  }, [canTrackLive, refreshOrder, state.order?.orderStatus]);
 
   /** Ends the session and starts a clean one, for the next customer. */
   const finish = useCallback(async (): Promise<void> => {
@@ -278,11 +420,13 @@ export function useOrdering(outletId: string, channel: Channel) {
   const sendUtterance = useCallback(
     async (text: string, declinedRecommendation = false): Promise<void> => {
       const phase: ConversationPhase =
-        state.step === 'review'
-          ? 'review'
-          : (state.cart?.items.length ?? 0) === 0
-            ? 'browsing'
-            : 'building';
+        state.step === 'payment'
+          ? 'payment'
+          : state.step === 'review'
+            ? 'review'
+            : (state.cart?.items.length ?? 0) === 0
+              ? 'browsing'
+              : 'building';
 
       patch({ busy: true, error: undefined });
       try {
@@ -318,6 +462,7 @@ export function useOrdering(outletId: string, channel: Channel) {
 
   return {
     state,
+    canTrackLive,
     start,
     addItem,
     setQuantity,
@@ -325,6 +470,8 @@ export function useOrdering(outletId: string, channel: Channel) {
     clearDraft,
     openReview,
     backToOrdering,
+    openPayment,
+    backToReview,
     confirm,
     refreshOrder,
     finish,

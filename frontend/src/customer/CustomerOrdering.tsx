@@ -1,21 +1,41 @@
-import { useState, type CSSProperties, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 import {
   LANGUAGES,
-  PAYMENT_METHODS,
   type CartLine,
+  type CartResponse,
   type Channel,
   type Language,
+  type MenuCategory,
   type MenuItem,
+  type MenuResponse,
   type PaymentMethod,
 } from '@vop/shared';
+import {
+  OTHER_CATEGORY_ID,
+  filterByCategory,
+  itemCount,
+  menuSections,
+  searchSections,
+} from './menuDiscovery';
 import type { SpeechClients } from '../audio/types';
-import { cartIssueMessage, checkoutBlockedReason, formatMoney } from './cartRules';
+import {
+  cartIssueMessage,
+  checkoutBlockedReason,
+  describeOptions,
+  formatMoney,
+  formatUpdatedTime,
+  orderStatusLabel,
+} from './cartRules';
+import { CheckoutProgress, PaymentStatusPanel, PaymentStep } from './PaymentStep';
 import { useOrdering } from './useOrdering';
+import { VoiceKioskPanel } from './VoiceKioskPanel';
+import './ordering.css';
 
 /**
  * The customer ordering surface for both channels. Kiosk differs only in type
- * size and width (docs/DESIGN_SYSTEM.md); the rules, the backend calls and the
- * confirmation step are identical (docs/PRD.md invariants).
+ * size, width and control size (docs/DESIGN_SYSTEM.md); the rules, the
+ * backend calls and the confirmation step are identical (docs/PRD.md
+ * invariants). Layout is responsive and lives in `ordering.css`.
  *
  * Touch alone completes an order. The assistant panel is additive: when it is
  * unavailable, or no speech client is supplied, every step below still works
@@ -28,39 +48,55 @@ const LANGUAGE_LABELS: Record<Language, string> = {
   hi: 'हिंदी',
 };
 
-const PAYMENT_LABELS: Record<PaymentMethod, string> = {
-  upiQr: 'Pay by UPI QR',
-  cashAtCounter: 'Pay cash at the counter',
-};
+/** Smooth scrolling only when the customer has not asked for less motion. */
+function scrollBehavior(): ScrollBehavior {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? 'auto'
+    : 'smooth';
+}
 
-const button: CSSProperties = {
-  minHeight: 'var(--touch-target-min)',
-  minWidth: 'var(--touch-target-min)',
-  padding: '0 var(--space-4)',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--color-border)',
-  background: 'var(--color-surface)',
-  color: 'var(--color-text)',
-  font: 'inherit',
-  cursor: 'pointer',
-};
+/**
+ * Scrolls to a section and moves focus to its heading, so keyboard and
+ * screen-reader users land where sighted users see the page go.
+ *
+ * In-page anchors (`href="#..."`) are deliberately not used: the surface is
+ * chosen from `location.hash` (App.tsx), so an anchor would switch a kiosk to
+ * the QR surface.
+ */
+function jumpTo(heading: HTMLElement | null): void {
+  if (heading === null) return;
+  heading.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
+  heading.focus({ preventScroll: true });
+}
 
-const primaryButton: CSSProperties = {
-  ...button,
-  background: 'var(--color-primary)',
-  borderColor: 'var(--color-primary-strong)',
-  color: '#ffffff',
-};
+/** Brings the menu results back into view if the customer scrolled past them. */
+function revealIfAbove(element: HTMLElement | null): void {
+  if (element === null) return;
+  if (element.getBoundingClientRect().top < 0) {
+    element.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
+  }
+}
 
-const card: CSSProperties = {
-  padding: 'var(--space-4)',
-  background: 'var(--color-surface)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-md)',
-};
+/** React key for a category; the uncategorised group has an empty id. */
+function categoryKey(category: MenuCategory): string {
+  return category.id === OTHER_CATEGORY_ID ? 'other' : category.id;
+}
+
+/** How many portions the draft holds - a count for a label, not money. */
+function portionCount(cart: CartResponse): number {
+  return cart.items.reduce((sum, line) => sum + line.quantity, 0);
+}
+
+function ErrorMessage({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <p aria-live="polite" className="vop-error">
+      {children}
+    </p>
+  );
+}
 
 /** One menu item with its optional, multi-select customisations. */
-function MenuItemRow({
+function MenuItemCard({
   item,
   disabled,
   onAdd,
@@ -79,70 +115,94 @@ function MenuItemRow({
     );
   };
 
+  const statusId = `vop-item-status-${item.id}`;
+  const addOnWord = selected.length === 1 ? 'add-on' : 'add-ons';
+
   return (
-    <li style={{ ...card, marginBottom: 'var(--space-3)' }}>
-      <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'baseline' }}>
-        <h3 style={{ margin: 0, fontSize: 'inherit' }}>{item.name}</h3>
-        <span>{formatMoney(item.priceMinor, item.currency)}</span>
+    <li
+      className={`vop-card vop-item${item.available ? '' : ' vop-item--unavailable'}`}
+      aria-describedby={statusId}
+    >
+      <div className="vop-item__head">
+        <h4 className="vop-item__name">{item.name}</h4>
+        <span className="vop-item__price">
+          {formatMoney(item.priceMinor, item.currency)}
+        </span>
       </div>
 
+      <p
+        id={statusId}
+        className={`vop-badge ${item.available ? 'vop-badge--available' : 'vop-badge--unavailable'}`}
+      >
+        {item.available ? 'Available' : 'Sold out'}
+      </p>
+
       {item.description !== undefined && (
-        <p style={{ margin: 'var(--space-2) 0', color: 'var(--color-text-muted)' }}>
-          {item.description}
-        </p>
+        <p className="vop-item__description vop-muted">{item.description}</p>
       )}
 
       {item.options.length > 0 && (
-        <fieldset
-          style={{ border: 0, padding: 0, margin: 'var(--space-2) 0' }}
-          disabled={!item.available}
-        >
-          <legend style={{ color: 'var(--color-text-muted)' }}>Add-ons</legend>
-          {item.options.map((option) => (
-            <label
-              key={option.id}
-              style={{
-                display: 'inline-flex',
-                gap: 'var(--space-2)',
-                alignItems: 'center',
-                minHeight: 'var(--touch-target-min)',
-                marginRight: 'var(--space-4)',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(option.id)}
-                onChange={() => toggle(option.id)}
-              />
-              {option.label}
-              {option.priceDeltaMinor !== 0 && (
-                <span aria-hidden="true">
-                  {' '}
-                  ({formatMoney(option.priceDeltaMinor, item.currency)})
-                </span>
-              )}
-            </label>
-          ))}
+        <fieldset className="vop-options" disabled={!item.available}>
+          <legend>
+            Add-ons <span className="vop-muted">(optional, choose any)</span>
+          </legend>
+          <div className="vop-options__list">
+            {item.options.map((option) => {
+              const checked = selected.includes(option.id);
+              const delta =
+                option.priceDeltaMinor === 0
+                  ? 'No extra charge'
+                  : `${option.priceDeltaMinor > 0 ? '+' : '−'}${formatMoney(
+                      Math.abs(option.priceDeltaMinor),
+                      item.currency,
+                    )}`;
+              return (
+                <label
+                  key={option.id}
+                  className={`vop-choice vop-option${checked ? ' vop-choice--selected' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggle(option.id)}
+                  />
+                  <span className="vop-option__label">{option.label}</span>
+                  <span
+                    className={`vop-options__delta${option.priceDeltaMinor === 0 ? ' vop-muted' : ''}`}
+                  >
+                    {delta}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
         </fieldset>
       )}
 
-      {item.available ? (
-        <button
-          type="button"
-          style={primaryButton}
-          disabled={disabled}
-          onClick={() => {
-            onAdd(selected);
-            setSelected([]);
-          }}
-        >
-          Add {item.name}
-        </button>
-      ) : (
-        <p style={{ margin: 0, color: 'var(--color-warning)' }}>
-          Sold out right now — not orderable.
-        </p>
-      )}
+      <div className="vop-item__add">
+        {item.available ? (
+          <button
+            type="button"
+            className="vop-button vop-button--primary vop-button--block"
+            disabled={disabled}
+            onClick={() => {
+              onAdd(selected);
+              setSelected([]);
+            }}
+          >
+            Add {item.name}
+            {selected.length > 0 && ` with ${selected.length} ${addOnWord}`}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="vop-button vop-button--block vop-item__soldout"
+            disabled
+          >
+            Sold out — cannot be added
+          </button>
+        )}
+      </div>
     </li>
   );
 }
@@ -150,80 +210,74 @@ function MenuItemRow({
 /** One draft line. An unavailable line is named as such, never just greyed. */
 function CartLineRow({
   line,
+  menu,
   currency,
   disabled,
   onQuantity,
   onRemove,
 }: {
   line: CartLine;
+  menu: MenuResponse;
   currency: 'INR';
   disabled: boolean;
   onQuantity: (quantity: number) => void;
   onRemove: () => void;
 }): JSX.Element {
+  const addOns = describeOptions(menu, line.menuItemId, line.optionIds);
   return (
     <li
-      style={{
-        ...card,
-        marginBottom: 'var(--space-2)',
-        borderColor: line.available ? 'var(--color-border)' : 'var(--color-warning)',
-        borderWidth: line.available ? 1 : 2,
-      }}
+      className={`vop-card vop-cart-line${line.available ? '' : ' vop-cart-line--unavailable'}`}
     >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 'var(--space-4)',
-        }}
-      >
+      <div className="vop-line-head">
         <span>
           {line.name}
-          {line.optionIds.length > 0 && (
-            <span style={{ color: 'var(--color-text-muted)' }}>
-              {' '}
-              + {line.optionIds.length} add-on(s)
-            </span>
+          {addOns !== undefined && (
+            <span className="vop-line-options vop-muted">+ {addOns}</span>
           )}
         </span>
-        {line.available && <span>{formatMoney(line.lineTotalMinor, currency)}</span>}
+        {line.available && (
+          <span className="vop-line-head__price">
+            {formatMoney(line.lineTotalMinor, currency)}
+          </span>
+        )}
       </div>
 
       {!line.available && (
-        <p style={{ margin: 'var(--space-2) 0', color: 'var(--color-warning)' }}>
+        <p className="vop-warning" style={{ margin: 'var(--space-2) 0' }}>
           Not orderable: {line.issues.map(cartIssueMessage).join(' ')} It is not
           included in your total.
         </p>
       )}
 
-      <div
-        style={{
-          display: 'flex',
-          gap: 'var(--space-2)',
-          alignItems: 'center',
-          marginTop: 'var(--space-2)',
-        }}
-      >
+      <div className="vop-qty">
         <button
           type="button"
-          style={button}
+          className="vop-button"
           disabled={disabled || !line.available}
           aria-label={`Fewer ${line.name}`}
           onClick={() => onQuantity(line.quantity - 1)}
         >
           −
         </button>
-        <span aria-label={`Quantity of ${line.name}`}>{line.quantity}</span>
+        <span className="vop-qty__value" aria-label={`Quantity of ${line.name}`}>
+          {line.quantity}
+        </span>
         <button
           type="button"
-          style={button}
+          className="vop-button"
           disabled={disabled || !line.available}
           aria-label={`More ${line.name}`}
           onClick={() => onQuantity(line.quantity + 1)}
         >
           +
         </button>
-        <button type="button" style={button} disabled={disabled} onClick={onRemove}>
+        <button
+          type="button"
+          className="vop-button vop-qty__remove"
+          disabled={disabled}
+          aria-label={`Remove ${line.name}`}
+          onClick={onRemove}
+        >
           Remove
         </button>
       </div>
@@ -257,11 +311,11 @@ function AssistantPanel({
   const voiceReady = speech?.capture !== undefined && speech?.stt !== undefined;
 
   return (
-    <section style={{ ...card, marginBottom: 'var(--space-4)' }}>
-      <h2 style={{ marginTop: 0, fontSize: 'inherit' }}>Ask for something</h2>
+    <section className="vop-card vop-assistant">
+      <h2>Ask for something</h2>
 
       {unavailable ? (
-        <p style={{ color: 'var(--color-warning)' }}>
+        <p className="vop-warning">
           The assistant is unavailable right now. Please use the menu below — your order
           is unaffected.
         </p>
@@ -274,33 +328,27 @@ function AssistantPanel({
             setText('');
             onSend(value);
           }}
-          style={{ display: 'flex', gap: 'var(--space-2)' }}
         >
-          <label style={{ flex: 1 }}>
-            <span style={{ color: 'var(--color-text-muted)' }}>
-              Type what you would like
-            </span>
+          <label>
+            <span className="vop-muted">Type what you would like</span>
             <input
+              className="vop-input"
               value={text}
               onChange={(event) => setText(event.target.value)}
-              style={{
-                width: '100%',
-                minHeight: 'var(--touch-target-min)',
-                font: 'inherit',
-                padding: '0 var(--space-2)',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-border)',
-              }}
             />
           </label>
-          <button type="submit" style={primaryButton} disabled={disabled}>
+          <button
+            type="submit"
+            className="vop-button vop-button--primary"
+            disabled={disabled}
+          >
             Send
           </button>
         </form>
       )}
 
       {!voiceReady && !unavailable && (
-        <p style={{ color: 'var(--color-text-muted)', marginBottom: 0 }}>
+        <p className="vop-muted" style={{ marginBottom: 0 }}>
           Voice input is not available in this build. Typing and the menu work the same
           way.
         </p>
@@ -327,35 +375,77 @@ export function CustomerOrdering({
 }): JSX.Element {
   const flow = useOrdering(outletId, channel);
   const { state } = flow;
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cashAtCounter');
+  /**
+   * No method is preselected: the customer chooses one on the payment step.
+   * Cleared for the next customer so a shared kiosk never carries it over.
+   */
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | undefined>(
+    undefined,
+  );
+  const cartHeading = useRef<HTMLHeadingElement>(null);
+  const menuResults = useRef<HTMLDivElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState('');
+  /** `undefined` shows every category. */
+  const [activeCategory, setActiveCategory] = useState<string | undefined>(undefined);
   const isKiosk = channel === 'kiosk';
   const blocked = checkoutBlockedReason(state.cart);
 
-  const frame: CSSProperties = {
-    maxWidth: isKiosk ? '900px' : '480px',
-    margin: '0 auto',
-    padding: 'var(--space-4)',
-    fontSize: isKiosk ? 'var(--font-size-kiosk-body)' : 'var(--font-size-body)',
+  /**
+   * Each checkout step replaces the whole screen, which would leave keyboard
+   * and screen-reader focus on a button that no longer exists. Move it to the
+   * new screen's heading instead (not on first load, so the menu is not
+   * scrolled or announced twice).
+   */
+  const previousStep = useRef(state.step);
+  useEffect(() => {
+    if (previousStep.current === state.step) return;
+    previousStep.current = state.step;
+    const heading = document.querySelector<HTMLElement>('.vop-order h1');
+    if (heading === null) return;
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: scrollBehavior() });
+  }, [state.step]);
+  const startOver = (): void => {
+    setPaymentMethod(undefined);
+    void flow.finish();
   };
+
+  const frameClass = (narrow: boolean, extra = ''): string =>
+    [
+      'vop-order',
+      isKiosk ? 'vop-order--kiosk' : '',
+      narrow ? 'vop-order--narrow' : '',
+      extra,
+    ]
+      .filter((name) => name !== '')
+      .join(' ');
 
   if (state.sessionLost) {
     return (
-      <main style={frame}>
+      <main className={frameClass(true)}>
         <h1>Session ended</h1>
         <p aria-live="polite">
           This ordering session has expired, so the draft is gone. Start again, or order
           at the counter.
         </p>
-        <button type="button" style={primaryButton} onClick={() => void flow.finish()}>
-          Start a new order
-        </button>
+        <div className="vop-actions">
+          <button
+            type="button"
+            className="vop-button vop-button--primary"
+            onClick={startOver}
+          >
+            Start a new order
+          </button>
+        </div>
       </main>
     );
   }
 
   if (state.startupFailed || state.menu === undefined) {
     return (
-      <main style={frame}>
+      <main className={frameClass(true)}>
         <h1>Ordering</h1>
         <p aria-live="polite">
           {state.startupFailed
@@ -363,9 +453,15 @@ export function CustomerOrdering({
             : 'Loading the menu…'}
         </p>
         {state.startupFailed && (
-          <button type="button" style={primaryButton} onClick={() => void flow.start()}>
-            Retry
-          </button>
+          <div className="vop-actions">
+            <button
+              type="button"
+              className="vop-button vop-button--primary"
+              onClick={() => void flow.start()}
+            >
+              Retry
+            </button>
+          </div>
         )}
       </main>
     );
@@ -378,255 +474,439 @@ export function CustomerOrdering({
   if (state.step === 'tracking' && state.order !== undefined) {
     const order = state.order;
     return (
-      <main style={frame}>
+      <main className={frameClass(true)}>
         <h1>Order confirmed</h1>
-        <section style={card} aria-live="polite">
-          <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>Pickup token</p>
-          <p style={{ fontSize: '2em', margin: 'var(--space-2) 0' }}>{order.token}</p>
-          <p style={{ margin: 0 }}>Kitchen status: {order.orderStatus}</p>
-          <p style={{ margin: 0 }}>
-            Payment: {PAYMENT_LABELS[order.paymentMethod]} — {order.paymentStatus}
-          </p>
-          <p style={{ color: 'var(--color-text-muted)' }}>
-            {order.paymentStatus === 'verified'
-              ? 'Payment confirmed by the outlet.'
-              : 'Payment is not confirmed yet. Staff confirm it at the counter.'}
-          </p>
-          <p style={{ margin: 0 }}>
-            Total {formatMoney(order.totalMinor, order.currency)}
-          </p>
-        </section>
+        <CheckoutProgress current="confirmed" />
+        <div className="vop-pay-stack">
+          <section className="vop-card" aria-live="polite">
+            <p className="vop-muted" style={{ margin: 0 }}>
+              Pickup token
+            </p>
+            <p className="vop-token">{order.token}</p>
+            <p className="vop-pay-order-state">
+              <span className="vop-pay-tag">Order confirmed</span>
+              <span className="vop-muted">
+                Kitchen: {orderStatusLabel(order.orderStatus)}
+              </span>
+            </p>
+          </section>
 
-        <div
-          style={{
-            display: 'flex',
-            gap: 'var(--space-2)',
-            marginTop: 'var(--space-4)',
-          }}
-        >
-          <button type="button" style={button} onClick={() => void flow.refreshOrder()}>
-            Refresh status
-          </button>
-          <button type="button" style={button} onClick={() => void flow.finish()}>
+          <PaymentStatusPanel order={order} />
+
+          {flow.canTrackLive ? (
+            state.orderUpdatedAt !== undefined && (
+              <p className="vop-muted" style={{ margin: 0 }}>
+                Last updated {formatUpdatedTime(state.orderUpdatedAt)}
+              </p>
+            )
+          ) : (
+            <p className="vop-warning" style={{ margin: 0 }}>
+              Live status updates are not available for this order on this screen, so
+              the statuses above will not change here. Please watch for token{' '}
+              {order.token} at the counter.
+            </p>
+          )}
+        </div>
+
+        <div className="vop-actions">
+          {flow.canTrackLive && (
+            <button
+              type="button"
+              className="vop-button"
+              onClick={() => void flow.refreshOrder()}
+            >
+              Refresh status
+            </button>
+          )}
+          <button type="button" className="vop-button" onClick={startOver}>
             Start another order
           </button>
         </div>
-        {state.error !== undefined && (
-          <p aria-live="polite" style={{ color: 'var(--color-error)' }}>
-            {state.error}
-          </p>
-        )}
+        {state.error !== undefined && <ErrorMessage>{state.error}</ErrorMessage>}
       </main>
     );
   }
 
-  // --- Review and confirmation --------------------------------------------
+  // --- Review --------------------------------------------------------------
 
   if (state.step === 'review' && state.quote !== undefined) {
     const quote = state.quote;
     return (
-      <main style={frame}>
+      <main className={frameClass(true)}>
         <h1>Review your order</h1>
-        <ul style={{ listStyle: 'none', padding: 0 }}>
+        <CheckoutProgress current="review" />
+        <ul className="vop-list" style={{ margin: 'var(--space-4) 0' }}>
           {quote.items.map((line, index) => (
             <li
               key={`${line.menuItemId}-${index}`}
-              style={{ ...card, marginBottom: 'var(--space-2)' }}
+              className="vop-card vop-review-line"
             >
-              {line.quantity} × {line.name}
-              {line.optionIds.length > 0 && (
-                <span style={{ color: 'var(--color-text-muted)' }}>
-                  {' '}
-                  + {line.optionIds.length} add-on(s)
-                </span>
-              )}
-              <span style={{ float: 'right' }}>
+              <span>
+                {line.quantity} × {line.name}
+                {line.optionIds.length > 0 && (
+                  <span className="vop-line-options vop-muted">
+                    + {describeOptions(menu, line.menuItemId, line.optionIds)}
+                  </span>
+                )}
+              </span>
+              <span className="vop-review-line__price">
                 {formatMoney(line.lineTotalMinor, quote.currency)}
               </span>
             </li>
           ))}
         </ul>
-        <p>
-          <strong>Total {formatMoney(quote.totalMinor, quote.currency)}</strong>
+        <p className="vop-total">
+          <span>Total</span>
+          <span>{formatMoney(quote.totalMinor, quote.currency)}</span>
         </p>
 
-        <fieldset style={{ ...card, marginBottom: 'var(--space-4)' }}>
-          <legend>How would you like to pay?</legend>
-          {PAYMENT_METHODS.map((method) => (
-            <label
-              key={method}
-              style={{
-                display: 'flex',
-                gap: 'var(--space-2)',
-                alignItems: 'center',
-                minHeight: 'var(--touch-target-min)',
-              }}
-            >
-              <input
-                type="radio"
-                name="paymentMethod"
-                checked={paymentMethod === method}
-                onChange={() => setPaymentMethod(method)}
-              />
-              {PAYMENT_LABELS[method]}
-            </label>
-          ))}
-          <p style={{ color: 'var(--color-text-muted)', marginBottom: 0 }}>
-            Payment is recorded by the outlet, not by this screen.
-          </p>
-        </fieldset>
+        <p className="vop-muted" style={{ margin: 0 }}>
+          Check your items and total. You choose how to pay on the next step.
+        </p>
 
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-          <button type="button" style={button} onClick={flow.backToOrdering}>
-            Back to the menu
-          </button>
+        <div className="vop-actions">
           <button
             type="button"
-            style={primaryButton}
+            className="vop-button vop-button--primary"
             disabled={state.busy}
-            onClick={() => void flow.confirm(paymentMethod)}
+            onClick={flow.openPayment}
           >
-            Confirm order
+            Continue to payment
+          </button>
+          <button type="button" className="vop-button" onClick={flow.backToOrdering}>
+            Back to the menu
           </button>
         </div>
 
-        {state.error !== undefined && (
-          <p aria-live="polite" style={{ color: 'var(--color-error)' }}>
-            {state.error} If you are not sure whether the order was created, press
-            Confirm order again — a retry cannot create a second order.
-          </p>
-        )}
+        {state.error !== undefined && <ErrorMessage>{state.error}</ErrorMessage>}
+      </main>
+    );
+  }
+
+  // --- Payment choice and confirmation -----------------------------------
+
+  if (state.step === 'payment' && state.quote !== undefined) {
+    return (
+      <main className={frameClass(true)}>
+        <PaymentStep
+          quote={state.quote}
+          menu={menu}
+          method={state.lockedPaymentMethod ?? paymentMethod}
+          lockedMethod={state.lockedPaymentMethod}
+          busy={state.busy}
+          error={state.error}
+          onSelect={setPaymentMethod}
+          onConfirm={(method) => void flow.confirm(method)}
+          onBack={flow.backToReview}
+        />
       </main>
     );
   }
 
   // --- Ordering ------------------------------------------------------------
 
+  const allSections = menuSections(menu);
+  const searched = searchSections(allSections, query);
+  // A category that has disappeared from the menu falls back to all.
+  const category = allSections.some((s) => s.category.id === activeCategory)
+    ? activeCategory
+    : undefined;
+  const visible = filterByCategory(searched, category);
+  const visibleCount = itemCount(visible);
+  const searching = query.trim() !== '';
+  const activeName = allSections.find((s) => s.category.id === category)?.category.name;
+  const hasLines = cart !== undefined && cart.items.length > 0;
+
+  const chooseCategory = (id: string | undefined): void => {
+    setActiveCategory(id);
+    revealIfAbove(menuResults.current);
+  };
+  const clearSearch = (): void => {
+    setQuery('');
+    searchInput.current?.focus();
+  };
+
+  const resultSummary = searching
+    ? `${visibleCount} ${visibleCount === 1 ? 'dish matches' : 'dishes match'} “${query.trim()}”${activeName !== undefined ? ` in ${activeName}` : ''}.`
+    : activeName !== undefined
+      ? `Showing ${activeName}: ${visibleCount} ${visibleCount === 1 ? 'dish' : 'dishes'}.`
+      : '';
+
   return (
-    <main style={frame}>
-      <h1>{menu.outlet.name}</h1>
-      <p style={{ color: 'var(--color-text-muted)' }}>
-        {isKiosk ? 'Kiosk ordering' : 'Ordering on your phone'}
-      </p>
-
-      <fieldset style={{ border: 0, padding: 0, marginBottom: 'var(--space-4)' }}>
-        <legend style={{ color: 'var(--color-text-muted)' }}>Language</legend>
-        {LANGUAGES.map((language) => (
-          <label
-            key={language}
-            style={{
-              display: 'inline-flex',
-              gap: 'var(--space-2)',
-              alignItems: 'center',
-              minHeight: 'var(--touch-target-min)',
-              marginRight: 'var(--space-4)',
-            }}
-          >
-            <input
-              type="radio"
-              name="language"
-              checked={state.language === language}
-              onChange={() => flow.setLanguage(language)}
-            />
-            {LANGUAGE_LABELS[language]}
-          </label>
-        ))}
-      </fieldset>
-
-      <AssistantPanel
-        unavailable={state.assistantUnavailable}
-        lastAssistantText={state.lastAssistantText}
-        disabled={state.busy}
-        speech={speech}
-        onSend={(text) => void flow.sendUtterance(text)}
-      />
-
-      {state.error !== undefined && (
-        <p aria-live="polite" style={{ color: 'var(--color-error)' }}>
-          {state.error}
+    <main className={frameClass(false, hasLines ? 'vop-order--with-cart-bar' : '')}>
+      <header className="vop-header">
+        <h1>{menu.outlet.name}</h1>
+        <p className="vop-muted" style={{ margin: 0 }}>
+          {isKiosk ? 'Kiosk ordering' : 'Ordering on your phone'}
         </p>
-      )}
 
-      <section aria-live="polite" style={{ marginBottom: 'var(--space-6)' }}>
-        <h2 style={{ fontSize: 'inherit' }}>Your order</h2>
-        {cart === undefined || cart.items.length === 0 ? (
-          <p style={{ color: 'var(--color-text-muted)' }}>
-            Nothing added yet. Browse the menu below, or ask for something above.
-          </p>
-        ) : (
-          <>
-            <ul style={{ listStyle: 'none', padding: 0 }}>
-              {cart.items.map((line) => (
-                <CartLineRow
-                  key={line.lineId}
-                  line={line}
-                  currency={cart.currency}
-                  disabled={state.busy}
-                  onQuantity={(quantity) =>
-                    quantity <= 0
-                      ? void flow.removeLine(line.lineId)
-                      : void flow.setQuantity(line.lineId, quantity)
-                  }
-                  onRemove={() => void flow.removeLine(line.lineId)}
-                />
-              ))}
-            </ul>
-            <p>
-              <strong>Total {formatMoney(cart.totalMinor, cart.currency)}</strong>
-            </p>
-            <button type="button" style={button} onClick={() => void flow.clearDraft()}>
-              Clear order
-            </button>
-          </>
-        )}
+        <fieldset className="vop-language">
+          <legend className="vop-muted">Language</legend>
+          {LANGUAGES.map((language) => (
+            <label
+              key={language}
+              lang={language}
+              className={`vop-choice${state.language === language ? ' vop-choice--selected' : ''}`}
+            >
+              <input
+                type="radio"
+                name="language"
+                checked={state.language === language}
+                onChange={() => flow.setLanguage(language)}
+              />
+              {LANGUAGE_LABELS[language]}
+            </label>
+          ))}
+        </fieldset>
+      </header>
 
-        <div style={{ marginTop: 'var(--space-4)' }}>
-          <button
-            type="button"
-            style={primaryButton}
-            disabled={state.busy || blocked !== undefined}
-            onClick={() => void flow.openReview()}
-          >
-            Review and confirm
-          </button>
-          {blocked !== undefined && (
-            <p style={{ color: 'var(--color-text-muted)' }}>{blocked}</p>
+      <div className="vop-layout">
+        <div className="vop-layout__menu">
+          {isKiosk ? (
+            <VoiceKioskPanel
+              speech={speech}
+              language={state.language}
+              assistantUnavailable={state.assistantUnavailable}
+              lastAssistantText={state.lastAssistantText}
+              busy={state.busy}
+              onSend={(text) => flow.sendUtterance(text)}
+            />
+          ) : (
+            <AssistantPanel
+              unavailable={state.assistantUnavailable}
+              lastAssistantText={state.lastAssistantText}
+              disabled={state.busy}
+              speech={speech}
+              onSend={(text) => void flow.sendUtterance(text)}
+            />
+          )}
+
+          {state.error !== undefined && <ErrorMessage>{state.error}</ErrorMessage>}
+
+          <h2>Menu</h2>
+          {allSections.length === 0 ? (
+            <p>This outlet has published no items yet. Please ask at the counter.</p>
+          ) : (
+            <div className="vop-discovery">
+              <form
+                role="search"
+                className="vop-search"
+                onSubmit={(event) => {
+                  // Results already update as the customer types.
+                  event.preventDefault();
+                }}
+              >
+                <label className="vop-search__label" htmlFor="vop-menu-search">
+                  Search dishes
+                </label>
+                <div className="vop-search__row">
+                  <input
+                    id="vop-menu-search"
+                    ref={searchInput}
+                    className="vop-input vop-search__input"
+                    type="search"
+                    autoComplete="off"
+                    placeholder="e.g. dosa"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape' && query !== '') {
+                        event.preventDefault();
+                        setQuery('');
+                      }
+                    }}
+                  />
+                  {query !== '' && (
+                    <button
+                      type="button"
+                      className="vop-button vop-search__clear"
+                      onClick={clearSearch}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              {allSections.length > 1 && (
+                <nav className="vop-categories" aria-label="Menu categories">
+                  <ul>
+                    <li>
+                      <button
+                        type="button"
+                        className="vop-button vop-category-chip"
+                        aria-pressed={category === undefined}
+                        onClick={() => chooseCategory(undefined)}
+                      >
+                        All
+                        {searching && (
+                          <span className="vop-category-chip__count">
+                            {itemCount(searched)}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                    {allSections.map((section) => {
+                      const matches =
+                        searched.find((s) => s.category.id === section.category.id)
+                          ?.items.length ?? 0;
+                      return (
+                        <li key={categoryKey(section.category)}>
+                          <button
+                            type="button"
+                            className="vop-button vop-category-chip"
+                            aria-pressed={category === section.category.id}
+                            onClick={() => chooseCategory(section.category.id)}
+                          >
+                            {section.category.name}
+                            {searching && (
+                              <span className="vop-category-chip__count">
+                                {matches}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </nav>
+              )}
+
+              <p className="vop-visually-hidden" aria-live="polite">
+                {resultSummary}
+              </p>
+
+              <div ref={menuResults} className="vop-menu-results">
+                {visible.length === 0 ? (
+                  <div className="vop-card vop-empty">
+                    <p className="vop-empty__title">
+                      {searching
+                        ? `No dishes match “${query.trim()}”${activeName !== undefined ? ` in ${activeName}` : ''}.`
+                        : 'No dishes in this category.'}
+                    </p>
+                    <p className="vop-muted">
+                      Check the spelling, try a shorter word, or browse all categories.
+                    </p>
+                    <div className="vop-actions">
+                      {searching && (
+                        <button
+                          type="button"
+                          className="vop-button vop-button--primary"
+                          onClick={clearSearch}
+                        >
+                          Clear search
+                        </button>
+                      )}
+                      {category !== undefined && (
+                        <button
+                          type="button"
+                          className="vop-button"
+                          onClick={() => chooseCategory(undefined)}
+                        >
+                          Show all categories
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  visible.map(({ category: section, items }) => (
+                    <section
+                      key={categoryKey(section)}
+                      className="vop-category-section"
+                    >
+                      <h3>{section.name}</h3>
+                      <ul className="vop-list vop-menu-grid">
+                        {items.map((item) => (
+                          <MenuItemCard
+                            key={item.id}
+                            item={item}
+                            disabled={state.busy}
+                            onAdd={(optionIds) => void flow.addItem(item.id, optionIds)}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  ))
+                )}
+              </div>
+            </div>
           )}
         </div>
-      </section>
 
-      <h2 style={{ fontSize: 'inherit' }}>Menu</h2>
-      {menu.categories.length === 0 && menu.items.length === 0 && (
-        <p>This outlet has published no items yet. Please ask at the counter.</p>
+        <aside className="vop-layout__cart" aria-label="Your order">
+          <section aria-live="polite" className="vop-cart">
+            <h2 ref={cartHeading} tabIndex={-1}>
+              Your order
+            </h2>
+            {cart === undefined || cart.items.length === 0 ? (
+              <p className="vop-muted">
+                Nothing added yet. Browse the menu, or ask for something above.
+              </p>
+            ) : (
+              <>
+                <ul className="vop-list">
+                  {cart.items.map((line) => (
+                    <CartLineRow
+                      key={line.lineId}
+                      line={line}
+                      menu={menu}
+                      currency={cart.currency}
+                      disabled={state.busy}
+                      onQuantity={(quantity) =>
+                        quantity <= 0
+                          ? void flow.removeLine(line.lineId)
+                          : void flow.setQuantity(line.lineId, quantity)
+                      }
+                      onRemove={() => void flow.removeLine(line.lineId)}
+                    />
+                  ))}
+                </ul>
+                <p className="vop-total">
+                  <span>Total</span>
+                  <span>{formatMoney(cart.totalMinor, cart.currency)}</span>
+                </p>
+              </>
+            )}
+
+            <div className="vop-actions" style={{ flexDirection: 'column' }}>
+              <button
+                type="button"
+                className="vop-button vop-button--primary vop-button--block"
+                disabled={state.busy || blocked !== undefined}
+                onClick={() => void flow.openReview()}
+              >
+                Review and confirm
+              </button>
+              {hasLines && (
+                <button
+                  type="button"
+                  className="vop-button vop-button--block"
+                  onClick={() => void flow.clearDraft()}
+                >
+                  Clear order
+                </button>
+              )}
+            </div>
+            {blocked !== undefined && <p className="vop-muted">{blocked}</p>}
+          </section>
+        </aside>
+      </div>
+
+      {cart !== undefined && cart.items.length > 0 && (
+        <div className="vop-cart-bar">
+          <button
+            type="button"
+            className="vop-button vop-button--primary"
+            onClick={() => jumpTo(cartHeading.current)}
+          >
+            <span>
+              View your order ({portionCount(cart)}{' '}
+              {portionCount(cart) === 1 ? 'item' : 'items'})
+            </span>
+            <span>{formatMoney(cart.totalMinor, cart.currency)}</span>
+          </button>
+        </div>
       )}
-      {[...menu.categories]
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .concat(
-          menu.items.some((item) => item.categoryId === undefined)
-            ? [{ id: '', name: 'Other', sortOrder: Number.MAX_SAFE_INTEGER }]
-            : [],
-        )
-        .map((category) => {
-          const items = menu.items.filter(
-            (item) => (item.categoryId ?? '') === category.id,
-          );
-          if (items.length === 0) return null;
-          return (
-            <section key={category.id === '' ? 'other' : category.id}>
-              <h3 style={{ fontSize: 'inherit' }}>{category.name}</h3>
-              <ul style={{ listStyle: 'none', padding: 0 }}>
-                {items.map((item) => (
-                  <MenuItemRow
-                    key={item.id}
-                    item={item}
-                    disabled={state.busy}
-                    onAdd={(optionIds) => void flow.addItem(item.id, optionIds)}
-                  />
-                ))}
-              </ul>
-            </section>
-          );
-        })}
     </main>
   );
 }

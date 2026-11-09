@@ -1,0 +1,767 @@
+/**
+ * Customer ordering layout (docs/DESIGN_SYSTEM.md sections 4-6).
+ *
+ * Mobile-first. Breakpoints start near the 600px and 900px the design system
+ * suggests and are not final:
+ *   < 600px   phone (QR): one column, sticky category bar, sticky cart bar
+ *   >= 600px  tablet: menu items in two columns, cart below the menu
+ *   >= 900px  desktop / landscape kiosk: menu and a sticky cart side by side
+ *
+ * Kiosk differs only in minimum control size (`.vop-order--kiosk`); type,
+ * widths and spacing match the QR page. The flow and the rules are the same.
+ *
+ * All values come from tokens.css. `--control-min` is a local alias so kiosk
+ * controls can exceed the 44px minimum without changing the global token.
+ */
+
+.vop-order {
+  --control-min: var(--touch-target-min);
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--space-4);
+  font-size: var(--font-size-body);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Kiosk matches the QR page's type, widths and card proportions; the QR page
+ * is the visual reference. The only difference kept is a taller minimum
+ * control size, so touch targets stay comfortable on a standing kiosk.
+ */
+.vop-order--kiosk {
+  --control-min: 56px;
+}
+
+/* Single-panel screens (loading, review, tracking) read better narrow. */
+.vop-order--narrow {
+  max-width: 640px;
+}
+
+.vop-order h1 {
+  margin: 0 0 var(--space-1);
+  font-size: 1.5em;
+  line-height: 1.2;
+}
+
+/* Headings receive focus on step changes; show a ring only for keyboard users. */
+.vop-order h1:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.vop-order h2,
+.vop-order h3 {
+  font-size: inherit;
+}
+
+.vop-muted {
+  color: var(--color-text-muted);
+}
+
+.vop-warning {
+  color: var(--color-warning);
+}
+
+.vop-error {
+  color: var(--color-error);
+}
+
+/* --- Controls ----------------------------------------------------------- */
+
+.vop-button {
+  min-height: var(--control-min);
+  min-width: var(--control-min);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.vop-button--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary-strong);
+  color: #ffffff;
+}
+
+.vop-button--primary:hover:not(:disabled) {
+  background: var(--color-primary-strong);
+}
+
+.vop-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.vop-button--block {
+  width: 100%;
+}
+
+.vop-card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.vop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Button rows stack full-width on phones, sit in a row from tablet up. */
+.vop-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.vop-actions > .vop-button {
+  width: 100%;
+}
+
+@media (min-width: 600px) {
+  .vop-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .vop-actions > .vop-button {
+    width: auto;
+  }
+
+  .vop-actions > .vop-button--block {
+    width: 100%;
+  }
+}
+
+/* --- Header and language ------------------------------------------------ */
+
+.vop-header {
+  margin-bottom: var(--space-4);
+}
+
+.vop-language {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  border: 0;
+  padding: 0;
+  margin: var(--space-3) 0 0;
+}
+
+.vop-language legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+}
+
+/* Chip-style choice: a real radio/checkbox inside a large label. */
+.vop-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.vop-choice--selected {
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.vop-choice input {
+  width: 1.25em;
+  height: 1.25em;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+/* --- Ordering layout ---------------------------------------------------- */
+
+.vop-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+/* Phone/tablet: menu first, the order below it, reached via the cart bar. */
+.vop-layout__menu {
+  order: 1;
+}
+
+.vop-layout__cart {
+  order: 2;
+}
+
+@media (min-width: 900px) {
+  .vop-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    align-items: start;
+  }
+
+  .vop-layout__cart {
+    position: sticky;
+    top: var(--space-4);
+    max-height: calc(100vh - var(--space-8));
+    overflow-y: auto;
+  }
+}
+
+/* --- Category navigation ------------------------------------------------ */
+
+.vop-categories {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 calc(-1 * var(--space-4)) var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.vop-categories ul {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--space-1);
+}
+
+.vop-categories li {
+  flex: 0 0 auto;
+}
+
+.vop-category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+/* Active category: filled, not colour alone - weight and a border change too. */
+.vop-category-chip[aria-pressed='true'] {
+  background: var(--color-primary);
+  border-color: var(--color-primary-strong);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.vop-category-chip__count {
+  min-width: 1.5em;
+  padding: 0 var(--space-1);
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: var(--font-size-secondary);
+  text-align: center;
+}
+
+.vop-category-section {
+  scroll-margin-top: calc(var(--control-min) + var(--space-6));
+}
+
+/* --- Search ------------------------------------------------------------- */
+
+.vop-search {
+  margin: 0 0 var(--space-3);
+}
+
+.vop-search__label {
+  display: block;
+  font-weight: 600;
+}
+
+.vop-search__row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.vop-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vop-search__clear {
+  flex: 0 0 auto;
+}
+
+.vop-menu-results {
+  scroll-margin-top: calc(var(--control-min) + var(--space-6));
+}
+
+.vop-empty__title {
+  margin: 0 0 var(--space-2);
+  font-weight: 600;
+}
+
+.vop-empty .vop-actions {
+  margin-top: var(--space-2);
+}
+
+.vop-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.vop-category-section h3 {
+  margin: var(--space-6) 0 var(--space-3);
+}
+
+.vop-category-section:first-of-type h3 {
+  margin-top: 0;
+}
+
+/* --- Menu items --------------------------------------------------------- */
+
+.vop-menu-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (min-width: 600px) {
+  .vop-menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* With the cart beside it, a desktop menu has room for two columns only. */
+@media (min-width: 1200px) {
+  .vop-menu-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.vop-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.vop-item--unavailable {
+  border-style: dashed;
+  background: var(--color-background);
+}
+
+.vop-item--unavailable .vop-item__name,
+.vop-item--unavailable .vop-item__price {
+  color: var(--color-text-muted);
+}
+
+.vop-item__name {
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* Status is spelled out in words; the border is a second cue, not the only one. */
+.vop-badge {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: var(--font-size-secondary);
+  font-weight: 600;
+}
+
+.vop-badge--available {
+  color: var(--color-success);
+}
+
+.vop-badge--unavailable {
+  color: var(--color-warning);
+}
+
+.vop-item__soldout:disabled {
+  opacity: 1;
+  color: var(--color-text-muted);
+  background: var(--color-background);
+  border-style: dashed;
+}
+
+.vop-item__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.vop-item__head h4 {
+  margin: 0;
+  font-size: inherit;
+}
+
+.vop-item__price {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: 1.05em;
+}
+
+.vop-item__description {
+  margin: 0;
+}
+
+/* Pushes the add button to the bottom so cards in a row line up. */
+.vop-item__add {
+  margin-top: auto;
+}
+
+.vop-options {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.vop-options legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font-weight: 600;
+}
+
+.vop-option__label {
+  min-width: 0;
+}
+
+.vop-option.vop-choice--selected {
+  font-weight: 600;
+}
+
+/* Keyboard focus on the hidden-in-plain-sight checkbox shows on the whole chip. */
+.vop-option:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.vop-options:disabled .vop-choice {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.vop-options__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* On phones each add-on is a full-width row: easier to hit, easier to read. */
+.vop-options .vop-choice {
+  flex: 1 1 100%;
+  justify-content: flex-start;
+}
+
+@media (min-width: 600px) {
+  .vop-options .vop-choice {
+    flex: 0 1 auto;
+  }
+}
+
+.vop-options__delta {
+  margin-left: auto;
+  padding-left: var(--space-2);
+}
+
+/* --- Cart --------------------------------------------------------------- */
+
+.vop-cart h2 {
+  margin: 0 0 var(--space-3);
+}
+
+/* The heading takes focus when the cart bar jumps here; show no ring for that. */
+.vop-cart h2:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.vop-cart-line {
+  margin-bottom: var(--space-2);
+}
+
+.vop-cart-line--unavailable {
+  border-color: var(--color-warning);
+  border-width: 2px;
+}
+
+.vop-line-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.vop-line-head__price {
+  flex: 0 0 auto;
+}
+
+.vop-line-options {
+  display: block;
+}
+
+.vop-qty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.vop-qty__value {
+  min-width: 2ch;
+  text-align: center;
+  font-weight: 600;
+}
+
+.vop-qty__remove {
+  margin-left: auto;
+}
+
+.vop-total {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  font-weight: 700;
+}
+
+/* Sticky cart bar: phones and tablets only, where the cart is off-screen. */
+.vop-cart-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: var(--space-2) var(--space-4)
+    calc(var(--space-2) + env(safe-area-inset-bottom));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.vop-cart-bar .vop-button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* Room so the fixed bar never covers the last controls. */
+.vop-order--with-cart-bar {
+  padding-bottom: calc(var(--control-min) + var(--space-12));
+}
+
+@media (min-width: 900px) {
+  .vop-cart-bar {
+    display: none;
+  }
+
+  .vop-order--with-cart-bar {
+    padding-bottom: var(--space-4);
+  }
+}
+
+/* --- Assistant ---------------------------------------------------------- */
+
+.vop-assistant {
+  margin-bottom: var(--space-4);
+}
+
+.vop-assistant h2 {
+  margin-top: 0;
+}
+
+.vop-assistant form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.vop-assistant label {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.vop-input {
+  display: block;
+  width: 100%;
+  min-height: var(--control-min);
+  margin-top: var(--space-1);
+  padding: 0 var(--space-2);
+  font: inherit;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+/* --- Kiosk voice panel -------------------------------------------------- */
+
+.vop-voice {
+  --voice-state: var(--color-primary);
+  margin-bottom: var(--space-4);
+  border-width: 2px;
+  border-color: var(--voice-state);
+}
+
+.vop-voice--listening {
+  --voice-state: var(--color-success);
+}
+
+.vop-voice--processing,
+.vop-voice--responding {
+  --voice-state: var(--color-accent);
+}
+
+.vop-voice--unavailable {
+  --voice-state: var(--color-border);
+}
+
+.vop-voice--error {
+  --voice-state: var(--color-error);
+}
+
+.vop-voice__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.vop-voice__mic {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 3px solid var(--voice-state);
+  background: var(--color-surface);
+  color: var(--voice-state);
+  cursor: pointer;
+}
+
+.vop-voice--ready .vop-voice__mic {
+  background: var(--color-primary);
+  border-color: var(--color-primary-strong);
+  color: #ffffff;
+}
+
+.vop-voice--listening .vop-voice__mic {
+  background: var(--color-success);
+  color: #ffffff;
+}
+
+.vop-voice__mic:disabled {
+  cursor: not-allowed;
+  color: var(--color-text-muted);
+}
+
+.vop-voice__mic:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+.vop-voice__mic svg {
+  width: 48px;
+  height: 48px;
+}
+
+.vop-voice__status {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.vop-voice__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
+  font-weight: 700;
+  font-size: 1.15em;
+}
+
+.vop-voice__dot {
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  background: var(--voice-state);
+}
+
+.vop-voice__detail,
+.vop-voice__note {
+  margin: 0;
+}
+
+.vop-voice__reply {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+}
+
+.vop-voice__type {
+  margin-top: var(--space-4);
+}
+
+.vop-voice__type label {
+  display: block;
+  font-weight: 600;
+}
+
+.vop-voice__note {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-secondary);
+}
+
+/* Motion is a supplement to the written state, and honours reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .vop-voice--listening .vop-voice__dot,
+  .vop-voice--processing .vop-voice__dot {
+    animation: vop-voice-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes vop-voice-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* --- Review ------------------------------------------------------------- */
+
+.vop-review-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.vop-review-line__price {
+  text-align: right;
+}
+
+/* --- Tracking ----------------------------------------------------------- */
+
+.vop-token {
+  margin: var(--space-2) 0;
+  font-size: 2.5em;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+}

@@ -66,6 +66,7 @@ Start with the [Product Requirements Document](docs/PRD.md), then use the suppor
 - [Provider configuration and verification](docs/PROVIDERS.md)
 - [Internal conversation contract and provider notes](docs/API.md#shared-conversational-service-contract-provisional-provider-neutral)
 - [Claude Code instructions](CLAUDE.md)
+- [Frontend guide: routes, setup, demo-only features and backend dependencies](frontend/README.md)
 
 The API routes, payloads, and data schemas are proposals for implementation planning. Confirm them against the actual repository and resolve open decisions before relying on them.
 

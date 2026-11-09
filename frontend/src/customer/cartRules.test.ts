@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { CART_LINE_ISSUES, type CartResponse } from '@vop/shared';
-import { cartIssueMessage, checkoutBlockedReason, formatMoney } from './cartRules';
+import {
+  CART_LINE_ISSUES,
+  ORDER_STATUSES,
+  PAYMENT_STATUSES,
+  type CartResponse,
+  type MenuResponse,
+} from '@vop/shared';
+import {
+  cartIssueMessage,
+  checkoutBlockedReason,
+  describeOptions,
+  formatMoney,
+  formatUpdatedTime,
+  orderStatusLabel,
+  paymentStatusLabel,
+  resolveOptionLabels,
+} from './cartRules';
 
 function cart(overrides: Partial<CartResponse>): CartResponse {
   return {
@@ -71,5 +86,87 @@ describe('formatMoney', () => {
   it('renders server minor units without rounding them away', () => {
     expect(formatMoney(8050, 'INR')).toContain('80.50');
     expect(formatMoney(0, 'INR')).toContain('0.00');
+  });
+});
+
+const menu = {
+  items: [
+    {
+      id: 'item-1',
+      name: 'Masala Dosa',
+      priceMinor: 8000,
+      currency: 'INR',
+      available: true,
+      options: [
+        { id: 'opt-ghee', label: 'Extra ghee', priceDeltaMinor: 1500 },
+        { id: 'opt-onion', label: 'No onion', priceDeltaMinor: 0 },
+      ],
+    },
+    {
+      id: 'item-2',
+      name: 'Filter Coffee',
+      priceMinor: 3000,
+      currency: 'INR',
+      available: true,
+      options: [{ id: 'opt-ghee', label: 'Strong', priceDeltaMinor: 0 }],
+    },
+  ],
+} as unknown as MenuResponse;
+
+describe('resolveOptionLabels', () => {
+  it('names add-ons in the order the line lists them', () => {
+    expect(resolveOptionLabels(menu, 'item-1', ['opt-onion', 'opt-ghee'])).toEqual([
+      'No onion',
+      'Extra ghee',
+    ]);
+  });
+
+  it('resolves an option ID within its own item only', () => {
+    expect(resolveOptionLabels(menu, 'item-2', ['opt-ghee'])).toEqual(['Strong']);
+  });
+
+  it('falls back to a generic name for unknown options, items or a missing menu', () => {
+    expect(resolveOptionLabels(menu, 'item-1', ['opt-gone'])).toEqual(['Add-on']);
+    expect(resolveOptionLabels(menu, 'item-gone', ['opt-ghee'])).toEqual(['Add-on']);
+    expect(resolveOptionLabels(undefined, 'item-1', ['opt-ghee'])).toEqual(['Add-on']);
+  });
+});
+
+describe('describeOptions', () => {
+  it('is undefined for a line with no add-ons', () => {
+    expect(describeOptions(menu, 'item-1', [])).toBeUndefined();
+  });
+
+  it('joins add-on names for display', () => {
+    expect(describeOptions(menu, 'item-1', ['opt-ghee', 'opt-onion'])).toBe(
+      'Extra ghee, No onion',
+    );
+  });
+});
+
+describe('status labels', () => {
+  it('has customer wording for every known status, never the raw code', () => {
+    for (const status of ORDER_STATUSES) {
+      expect(orderStatusLabel(status)).not.toBe(status);
+    }
+    for (const status of PAYMENT_STATUSES) {
+      expect(paymentStatusLabel(status)).not.toBe(status);
+    }
+    expect(orderStatusLabel('ready')).toMatch(/ready/i);
+    expect(paymentStatusLabel('dueAtCounter')).toMatch(/counter/i);
+  });
+
+  it('falls back safely for unknown values', () => {
+    expect(orderStatusLabel('somethingNew')).toMatch(/counter/i);
+    expect(orderStatusLabel('toString')).toMatch(/counter/i);
+    const unknownPayment = paymentStatusLabel('somethingNew');
+    expect(unknownPayment).toMatch(/unknown/i);
+    expect(unknownPayment).not.toMatch(/confirmed|paid/i);
+  });
+});
+
+describe('formatUpdatedTime', () => {
+  it('renders hours and minutes', () => {
+    expect(formatUpdatedTime(new Date(2026, 10, 9, 14, 5))).toMatch(/2:05/);
   });
 });

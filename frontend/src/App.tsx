@@ -1,6 +1,8 @@
-import { useEffect, useState, type JSX } from 'react';
+import { Suspense, lazy, useEffect, useState, type JSX } from 'react';
 import { CustomerShell } from './pages/CustomerShell';
+import { KitchenShell } from './pages/KitchenShell';
 import { MerchantShell } from './pages/MerchantShell';
+import { isKitchenHash } from './kitchen/kitchenRules';
 
 /**
  * Minimal hash-based surface switch for the foundation milestone.
@@ -12,12 +14,29 @@ import { MerchantShell } from './pages/MerchantShell';
  *   #/            customer QR mobile
  *   #/kiosk       customer kiosk
  *   #/merchant    merchant dashboard
+ *   #/kitchen     kitchen display (`#/kitchen?outlet=<id>`)
+ *   #/payment-preview  payment-state design reference (development builds only)
  */
-function readSurface(hash: string): 'qr' | 'kiosk' | 'merchant' {
+function readSurface(
+  hash: string,
+): 'qr' | 'kiosk' | 'merchant' | 'kitchen' | 'paymentPreview' {
+  if (isKitchenHash(hash)) return 'kitchen';
+  // Design reference only; never reachable in a production build.
+  if (import.meta.env.DEV && hash.startsWith('#/payment-preview'))
+    return 'paymentPreview';
   if (hash.startsWith('#/merchant')) return 'merchant';
   if (hash.startsWith('#/kiosk')) return 'kiosk';
   return 'qr';
 }
+
+/** Loaded only in development; production builds drop the module entirely. */
+const PaymentStatePreview = import.meta.env.DEV
+  ? lazy(() =>
+      import('./customer/PaymentStatePreview').then((m) => ({
+        default: m.PaymentStatePreview,
+      })),
+    )
+  : undefined;
 
 export function App(): JSX.Element {
   const [surface, setSurface] = useState(() => readSurface(window.location.hash));
@@ -29,5 +48,13 @@ export function App(): JSX.Element {
   }, []);
 
   if (surface === 'merchant') return <MerchantShell />;
+  if (surface === 'kitchen') return <KitchenShell />;
+  if (surface === 'paymentPreview' && PaymentStatePreview !== undefined) {
+    return (
+      <Suspense fallback={null}>
+        <PaymentStatePreview />
+      </Suspense>
+    );
+  }
   return <CustomerShell channel={surface === 'kiosk' ? 'kiosk' : 'qr'} />;
 }
