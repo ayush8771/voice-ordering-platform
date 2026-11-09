@@ -76,6 +76,18 @@ npx prettier --check frontend/src
 - `server.allowedHosts` in `vite.config.ts` affects only the dev server.
 - Hosting, TLS and domain are open decisions (docs/PRD.md section 9).
 
+## Languages
+
+The UI is available in English (`en`), Kannada (`kn`) and Hindi (`hi`):
+
+- **Where to choose:** language chips on every customer screen (QR and kiosk), and a select in the merchant and kitchen headers.
+- **Persistence:** the choice is stored in `localStorage` (`vop.language`) and restored on reload. A missing or invalid value means English.
+- **No side effects:** switching never resets the cart, the ordering session or an order. `<html lang>` follows the choice.
+- **Assistant:** the same language is sent with each conversation turn.
+- **Dictionaries:** strings live in `src/i18n/` (`en.ts` is the typed source; `kn.ts`, `hi.ts`). A key missing from Kannada or Hindi falls back to English, and `i18n.test.ts` fails if any key or placeholder is missing.
+- **Not translated:** backend content is shown exactly as received: menu item names and descriptions, category and outlet names, add-on labels, order data and server error messages.
+- **Search:** matches menu text as the backend stores it, so it works in the menu's own language.
+
 ## Demo-only and placeholder features
 
 These are clearly labelled on screen and perform no real action:

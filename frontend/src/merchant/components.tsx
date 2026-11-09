@@ -1,24 +1,24 @@
 import type { JSX, ReactNode } from 'react';
 import type { OrderStatus, PaymentStatus } from '@vop/shared';
-import {
-  ORDER_STATUS_STAFF_LABELS,
-  PAYMENT_STATUS_STAFF_LABELS,
-} from './merchantRules';
+import { useI18n } from '../i18n/I18nProvider';
+import { orderStatusStaffLabel, paymentStatusStaffLabel } from './merchantRules';
 
 /** Reusable merchant building blocks. Status is always written, never colour alone. */
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }): JSX.Element {
+  const { language } = useI18n();
   return (
     <span className={`vop-m-badge vop-m-badge--${status}`}>
-      {ORDER_STATUS_STAFF_LABELS[status]}
+      {orderStatusStaffLabel(status, language)}
     </span>
   );
 }
 
 export function PaymentStatusBadge({ status }: { status: PaymentStatus }): JSX.Element {
+  const { language } = useI18n();
   return (
     <span className={`vop-m-badge vop-m-badge--pay-${status}`}>
-      {PAYMENT_STATUS_STAFF_LABELS[status]}
+      {paymentStatusStaffLabel(status, language)}
     </span>
   );
 }
@@ -66,11 +66,10 @@ export function StateMessage({
 }
 
 export function DemoBanner(): JSX.Element {
+  const { t } = useI18n();
   return (
     <p className="vop-m-banner" role="note">
-      <strong>Sample data.</strong> These orders are demo fixtures, not your
-      outlet&apos;s live orders. Live order data needs the merchant API and staff
-      sign-in, which are not built yet.
+      <strong>{t('m.demoBannerStrong')}</strong> {t('m.demoBannerRest')}
     </p>
   );
 }
@@ -83,8 +82,9 @@ export function SourceToggle({
   source: 'demo' | 'live';
   onChange: (source: 'demo' | 'live') => void;
 }): JSX.Element {
+  const { t } = useI18n();
   return (
-    <div className="vop-m-toggle" role="group" aria-label="Data source">
+    <div className="vop-m-toggle" role="group" aria-label={t('m.source.label')}>
       {(['demo', 'live'] as const).map((value) => (
         <button
           key={value}
@@ -93,7 +93,7 @@ export function SourceToggle({
           aria-pressed={source === value}
           onClick={() => onChange(value)}
         >
-          {value === 'demo' ? 'Sample data' : 'Live data'}
+          {value === 'demo' ? t('m.source.demo') : t('m.source.live')}
         </button>
       ))}
     </div>
@@ -102,10 +102,16 @@ export function SourceToggle({
 
 /** A control for an action the backend cannot perform yet. */
 export function ComingSoonButton({ children }: { children: ReactNode }): JSX.Element {
+  const { t } = useI18n();
   return (
-    <button type="button" className="vop-m-button" disabled title="Coming soon">
+    <button
+      type="button"
+      className="vop-m-button"
+      disabled
+      title={t('common.comingSoon')}
+    >
       {children}
-      <span className="vop-m-soon">Coming soon</span>
+      <span className="vop-m-soon">{t('common.comingSoon')}</span>
     </button>
   );
 }

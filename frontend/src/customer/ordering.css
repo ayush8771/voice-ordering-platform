@@ -153,6 +153,15 @@
   margin: var(--space-3) 0 0;
 }
 
+/* Language choice above single-panel screens (review, payment, tracking). */
+.vop-language-bar {
+  margin-bottom: var(--space-3);
+}
+
+.vop-language-bar .vop-language {
+  margin-top: 0;
+}
+
 .vop-language legend {
   padding: 0;
   margin-bottom: var(--space-1);

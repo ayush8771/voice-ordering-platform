@@ -1,19 +1,18 @@
-import { useEffect, useState, type JSX, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type JSX, type ReactNode } from 'react';
 import type { OrderResponse } from '@vop/shared';
 import { getHealth } from '../api/client';
 import { DEMO_ORDERS } from '../merchant/demoOrders';
-import {
-  PAYMENT_STATUS_STAFF_LABELS,
-  formatOrderTime,
-} from '../merchant/merchantRules';
+import { useI18n } from '../i18n/I18nProvider';
+import { LanguageSelect } from '../i18n/LanguagePicker';
+import { formatOrderTime, paymentStatusStaffLabel } from '../merchant/merchantRules';
 import {
   KITCHEN_COLUMNS,
-  KITCHEN_STATUS_LABELS,
   addOnLabel,
   ageLevel,
   buildBoard,
   elapsedMinutes,
   formatElapsed,
+  kitchenStatusLabel,
   type KitchenBoard,
   type KitchenColumnDef,
 } from './kitchenRules';
@@ -44,8 +43,6 @@ type Feed =
     }
   | { readonly kind: 'backendUnavailable'; readonly checkedAt: number }
   | { readonly kind: 'liveUnavailable'; readonly checkedAt: number };
-
-const CHANNEL_LABELS = { qr: 'QR', kiosk: 'Kiosk' } as const;
 
 /** Wall clock, re-read on an interval so the header and elapsed times move. */
 function useNow(intervalMs: number): number {
@@ -83,26 +80,36 @@ function useFeed(source: Source, attempt: number): Feed {
   return feed;
 }
 
-const clockDate = new Intl.DateTimeFormat('en-IN', {
-  weekday: 'short',
-  day: 'numeric',
-  month: 'short',
-});
-const clockTime = new Intl.DateTimeFormat('en-IN', {
-  hour: 'numeric',
-  minute: '2-digit',
-});
-const stampTime = new Intl.DateTimeFormat('en-IN', {
-  hour: 'numeric',
-  minute: '2-digit',
-  second: '2-digit',
-});
+/** Clock and timestamp formats in the UI language's locale. */
+function useFormats(locale: string) {
+  return useMemo(
+    () => ({
+      clockDate: new Intl.DateTimeFormat(locale, {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+      }),
+      clockTime: new Intl.DateTimeFormat(locale, {
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+      stampTime: new Intl.DateTimeFormat(locale, {
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+    }),
+    [locale],
+  );
+}
 
 export function KitchenDisplay({
   outletId,
 }: {
   outletId: string | undefined;
 }): JSX.Element {
+  const { t, tp, rich, locale } = useI18n();
+  const { clockDate, clockTime, stampTime } = useFormats(locale);
   const [source, setSource] = useState<Source>('demo');
   const [attempt, setAttempt] = useState(0);
   const feed = useFeed(source, attempt);
@@ -117,20 +124,19 @@ export function KitchenDisplay({
   let content: ReactNode;
   if (outletId === undefined) {
     content = (
-      <KitchenState title="Which outlet?">
-        This link does not name an outlet, so no orders can be shown. Open{' '}
-        <code>#/kitchen?outlet=demo-outlet</code>.
+      <KitchenState title={t('k.noOutletTitle')}>
+        {rich('k.noOutletBody', { example: <code>#/kitchen?outlet=demo-outlet</code> })}
       </KitchenState>
     );
   } else if (feed.kind === 'loading') {
     content = (
-      <KitchenState title="Loading kitchen orders…">Checking the backend.</KitchenState>
+      <KitchenState title={t('k.loadingTitle')}>{t('k.loadingBody')}</KitchenState>
     );
   } else if (feed.kind === 'backendUnavailable') {
     content = (
       <KitchenState
         tone="error"
-        title="Backend unavailable"
+        title={t('k.backendDownTitle')}
         action={
           <>
             <button
@@ -138,40 +144,37 @@ export function KitchenDisplay({
               className="vop-k-button vop-k-button--primary"
               onClick={refresh}
             >
-              Retry
+              {t('common.retry')}
             </button>
             <button
               type="button"
               className="vop-k-button"
               onClick={() => setSource('demo')}
             >
-              Show demo data
+              {t('k.showDemo')}
             </button>
           </>
         }
       >
-        The kitchen display could not reach the server (checked at{' '}
-        {stampTime.format(feed.checkedAt)}). This does not mean there are no orders —
-        check that the backend is running.
+        {t('k.backendDownBody', { time: stampTime.format(feed.checkedAt) })}
       </KitchenState>
     );
   } else if (feed.kind === 'liveUnavailable') {
     content = (
       <KitchenState
         tone="warning"
-        title="Live kitchen data unavailable"
+        title={t('k.liveUnavailableTitle')}
         action={
           <button
             type="button"
             className="vop-k-button"
             onClick={() => setSource('demo')}
           >
-            Show demo data
+            {t('k.showDemo')}
           </button>
         }
       >
-        The backend is reachable, but it has no kitchen order feed yet, and staff
-        sign-in is not decided. Live tickets will appear here once both exist.
+        {t('k.liveUnavailableBody')}
       </KitchenState>
     );
   } else if (board !== undefined) {
@@ -189,10 +192,10 @@ export function KitchenDisplay({
     <div className="vop-k">
       <header className="vop-k-header">
         <div className="vop-k-header__title">
-          <h1>Kitchen</h1>
+          <h1>{t('k.title')}</h1>
           <p className="vop-k-muted">
-            Outlet:{' '}
-            <strong className="vop-k-outlet">{outletId ?? 'not selected'}</strong>
+            {t('k.outlet')}{' '}
+            <strong className="vop-k-outlet">{outletId ?? t('k.notSelected')}</strong>
           </p>
         </div>
 
@@ -208,10 +211,10 @@ export function KitchenDisplay({
         <div className="vop-k-controls">
           {source === 'demo' && (
             <span className="vop-k-demo-tag" role="note">
-              DEMO DATA
+              {t('k.demoTag')}
             </span>
           )}
-          <div className="vop-k-toggle" role="group" aria-label="Data source">
+          <div className="vop-k-toggle" role="group" aria-label={t('k.source.label')}>
             {(['demo', 'live'] as const).map((value) => (
               <button
                 key={value}
@@ -220,7 +223,7 @@ export function KitchenDisplay({
                 aria-pressed={source === value}
                 onClick={() => setSource(value)}
               >
-                {value === 'demo' ? 'Demo data' : 'Live data'}
+                {value === 'demo' ? t('k.source.demo') : t('k.source.live')}
               </button>
             ))}
           </div>
@@ -230,16 +233,15 @@ export function KitchenDisplay({
             onClick={refresh}
             disabled={feed.kind === 'loading'}
           >
-            Refresh
+            {t('k.refresh')}
           </button>
+          <LanguageSelect className="vop-k-lang" />
         </div>
       </header>
 
       {source === 'demo' && (
         <p className="vop-k-banner" role="note">
-          <strong>Demo data.</strong> These tickets are sample fixtures, not this
-          outlet&apos;s live orders. A live kitchen feed needs the kitchen API and staff
-          sign-in, which are not built yet.
+          <strong>{t('k.bannerStrong')}</strong> {t('k.bannerRest')}
         </p>
       )}
 
@@ -248,33 +250,30 @@ export function KitchenDisplay({
       <footer className="vop-k-footer" aria-live="polite">
         {lastChecked !== undefined && (
           <span>
-            {feed.kind === 'demo' ? 'Last refreshed' : 'Last checked'}{' '}
-            {stampTime.format(lastChecked)}
+            {t(feed.kind === 'demo' ? 'k.lastRefreshed' : 'k.lastChecked', {
+              time: stampTime.format(lastChecked),
+            })}
           </span>
         )}
         {board !== undefined && board.hiddenCount > 0 && (
-          <span>
-            {board.hiddenCount} collected or cancelled{' '}
-            {board.hiddenCount === 1 ? 'order is' : 'orders are'} not shown
-          </span>
+          <span>{tp('k.hidden', board.hiddenCount)}</span>
         )}
-        <span>
-          Status changes are coming soon: they need the kitchen API and staff sign-in.
-        </span>
+        <span>{t('k.statusChangesSoon')}</span>
       </footer>
     </div>
   );
 }
 
 function Counts({ board }: { board: KitchenBoard | undefined }): JSX.Element {
+  const { t } = useI18n();
   return (
-    <ul className="vop-k-counts" aria-label="Orders by status">
+    <ul className="vop-k-counts" aria-label={t('k.countsLabel')}>
       {KITCHEN_COLUMNS.map((c) => (
         <li key={c.id} className={`vop-k-count vop-k-count--${c.id}`}>
           <span className="vop-k-count__value">
             {board === undefined ? '–' : board.columns[c.id].length}
           </span>
-          <span className="vop-k-count__label">{c.title}</span>
+          <span className="vop-k-count__label">{t(`k.col.${c.id}.title`)}</span>
         </li>
       ))}
     </ul>
@@ -282,12 +281,13 @@ function Counts({ board }: { board: KitchenBoard | undefined }): JSX.Element {
 }
 
 function Board({ board, now }: { board: KitchenBoard; now: number }): JSX.Element {
+  const { t } = useI18n();
   const total = KITCHEN_COLUMNS.reduce((n, c) => n + board.columns[c.id].length, 0);
   if (total === 0) {
     return (
-      <KitchenState title="No orders in the kitchen">
-        New orders for this outlet will appear here.
-        {board.hiddenCount > 0 && ' Collected and cancelled orders are not shown.'}
+      <KitchenState title={t('k.emptyTitle')}>
+        {t('k.emptyBody')}
+        {board.hiddenCount > 0 && ` ${t('k.emptyHidden')}`}
       </KitchenState>
     );
   }
@@ -309,6 +309,7 @@ function Column({
   orders: readonly OrderResponse[];
   now: number;
 }): JSX.Element {
+  const { t } = useI18n();
   const headingId = `vop-k-col-${def.id}`;
   return (
     <section
@@ -317,12 +318,13 @@ function Column({
     >
       <header className="vop-k-column__head">
         <h2 id={headingId}>
-          {def.title} <span className="vop-k-column__count">{orders.length}</span>
+          {t(`k.col.${def.id}.title`)}{' '}
+          <span className="vop-k-column__count">{orders.length}</span>
         </h2>
-        <p className="vop-k-muted">{def.description}</p>
+        <p className="vop-k-muted">{t(`k.col.${def.id}.description`)}</p>
       </header>
       {orders.length === 0 ? (
-        <p className="vop-k-column__empty">{def.emptyText}</p>
+        <p className="vop-k-column__empty">{t(`k.col.${def.id}.empty`)}</p>
       ) : (
         <ol className="vop-k-tickets">
           {orders.map((o) => (
@@ -336,8 +338,6 @@ function Column({
   );
 }
 
-const AGE_TAGS = { watch: 'Long wait', late: 'Very long wait' } as const;
-
 function Ticket({
   order,
   def,
@@ -347,18 +347,24 @@ function Ticket({
   def: KitchenColumnDef;
   now: number;
 }): JSX.Element {
+  const { t, language } = useI18n();
   const minutes = elapsedMinutes(order.createdAt, now);
   const level = ageLevel(minutes, order.orderStatus);
-  const statusLabel = KITCHEN_STATUS_LABELS[order.orderStatus];
+  const statusLabel = kitchenStatusLabel(order.orderStatus, language);
+  const elapsed = formatElapsed(minutes, language);
 
   return (
     <article
       className={`vop-k-ticket vop-k-ticket--${level}`}
-      aria-label={`Token ${order.token}, ${statusLabel}, received ${minutes >= 1 ? `${formatElapsed(minutes)} ago` : 'just now'}`}
+      aria-label={
+        minutes >= 1
+          ? t('k.ticket.ariaAgo', { token: order.token, status: statusLabel, elapsed })
+          : t('k.ticket.ariaNow', { token: order.token, status: statusLabel })
+      }
     >
       <div className="vop-k-ticket__head">
         <p className="vop-k-ticket__token">
-          <span className="vop-k-ticket__token-label">Token</span>
+          <span className="vop-k-ticket__token-label">{t('k.ticket.token')}</span>
           {order.token}
         </p>
         <span className={`vop-k-status vop-k-status--${order.orderStatus}`}>
@@ -367,25 +373,31 @@ function Ticket({
       </div>
 
       <p className="vop-k-ticket__meta vop-k-muted">
-        Order {order.orderId} · {CHANNEL_LABELS[order.channel]}
+        {t('k.ticket.order', {
+          orderId: order.orderId,
+          channel: t(order.channel === 'qr' ? 'common.qr' : 'common.kiosk'),
+        })}
       </p>
 
       <p className="vop-k-ticket__time">
         <span>
-          Received{' '}
-          <time dateTime={order.createdAt}>{formatOrderTime(order.createdAt)}</time>
+          <time dateTime={order.createdAt}>
+            {t('k.ticket.received', {
+              time: formatOrderTime(order.createdAt, language),
+            })}
+          </time>
         </span>
         <span className="vop-k-ticket__elapsed">
-          {formatElapsed(minutes)}
+          {elapsed}
           {level !== 'normal' && (
-            <span className="vop-k-age-tag">{AGE_TAGS[level]}</span>
+            <span className="vop-k-age-tag">{t(`k.age.${level}`)}</span>
           )}
         </span>
       </p>
 
       <ul className="vop-k-items">
         {order.items.map((item, index) => {
-          const addOns = addOnLabel(item.optionIds.length);
+          const addOns = addOnLabel(item.optionIds.length, language);
           return (
             <li key={`${item.menuItemId}-${index}`} className="vop-k-item">
               <span className="vop-k-item__qty">{item.quantity}×</span>
@@ -401,17 +413,19 @@ function Ticket({
       </ul>
 
       <p className="vop-k-ticket__pay vop-k-muted">
-        Payment: {PAYMENT_STATUS_STAFF_LABELS[order.paymentStatus]}
+        {t('k.ticket.payment', {
+          status: paymentStatusStaffLabel(order.paymentStatus, language),
+        })}
       </p>
 
       <button
         type="button"
         className="vop-k-button vop-k-ticket__action"
         disabled
-        title="Coming soon: needs the kitchen API and staff sign-in"
+        title={t('k.ticket.actionTitle')}
       >
-        {def.nextAction}
-        <span className="vop-k-soon">Coming soon</span>
+        {t(`k.col.${def.id}.action`)}
+        <span className="vop-k-soon">{t('common.comingSoon')}</span>
       </button>
     </article>
   );

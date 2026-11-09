@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
 import type { Language } from '@vop/shared';
 import type { SpeechClients } from '../audio/types';
+import { useI18n } from '../i18n/I18nProvider';
 import { voiceAvailability, voicePhaseCopy, type VoicePhase } from './voiceState';
 
 /**
@@ -28,6 +29,7 @@ export function VoiceKioskPanel({
   busy: boolean;
   onSend: (text: string) => Promise<void>;
 }): JSX.Element {
+  const { t } = useI18n();
   const availability = voiceAvailability(speech, assistantUnavailable);
   const [active, setActive] = useState<'ready' | 'listening' | 'processing' | 'error'>(
     'ready',
@@ -79,7 +81,9 @@ export function VoiceKioskPanel({
               : availability.kind === 'notConnected'
                 ? 'unavailable'
                 : 'ready';
-  const copy = voicePhaseCopy(phase, availability);
+  // The panel's wording follows the UI language, which is also the language
+  // sent to speech recognition and to the assistant.
+  const copy = voicePhaseCopy(phase, availability, language);
   const voiceReady = availability.kind === 'available';
 
   const send = async (value: string): Promise<void> => {
@@ -118,10 +122,10 @@ export function VoiceKioskPanel({
 
   const micLabel =
     phase === 'listening'
-      ? 'Stop listening'
+      ? t('voice.mic.stop')
       : voiceReady
-        ? 'Start voice ordering'
-        : 'Voice ordering unavailable';
+        ? t('voice.mic.start')
+        : t('voice.mic.unavailable');
 
   return (
     <section
@@ -129,7 +133,7 @@ export function VoiceKioskPanel({
       aria-labelledby="vop-voice-title"
     >
       <h2 id="vop-voice-title" className="vop-visually-hidden">
-        Voice and typed ordering
+        {t('voice.heading')}
       </h2>
 
       <div className="vop-voice__main">
@@ -169,7 +173,7 @@ export function VoiceKioskPanel({
               setActive('ready');
             }}
           >
-            Cancel
+            {t('voice.cancel')}
           </button>
         )}
         {phase === 'error' && (
@@ -178,14 +182,14 @@ export function VoiceKioskPanel({
             className="vop-button"
             onClick={() => setActive('ready')}
           >
-            Dismiss
+            {t('voice.dismiss')}
           </button>
         )}
       </div>
 
       {lastAssistantText !== undefined && (
         <p className="vop-voice__reply">
-          <span className="vop-muted">Assistant: </span>
+          <span className="vop-muted">{t('voice.assistantPrefix')} </span>
           {lastAssistantText}
         </p>
       )}
@@ -201,7 +205,7 @@ export function VoiceKioskPanel({
             void send(value);
           }}
         >
-          <label htmlFor="vop-voice-text">Or type what you would like</label>
+          <label htmlFor="vop-voice-text">{t('voice.typeLabel')}</label>
           <div className="vop-search__row">
             <input
               id="vop-voice-text"
@@ -215,15 +219,13 @@ export function VoiceKioskPanel({
               className="vop-button vop-button--primary"
               disabled={busy || phase === 'listening'}
             >
-              Send
+              {t('assistant.send')}
             </button>
           </div>
         </form>
       )}
 
-      <p className="vop-voice__note vop-muted">
-        Nothing is ordered until you review and confirm it on screen.
-      </p>
+      <p className="vop-voice__note vop-muted">{t('voice.note')}</p>
     </section>
   );
 }

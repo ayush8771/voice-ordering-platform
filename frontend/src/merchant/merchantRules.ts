@@ -1,4 +1,5 @@
-import type { OrderResponse, OrderStatus, PaymentStatus } from '@vop/shared';
+import type { Language, OrderResponse, OrderStatus, PaymentStatus } from '@vop/shared';
+import { LOCALES, translate } from '../i18n/translate';
 
 /**
  * Display rules for the merchant dashboard. Pure functions over orders the
@@ -16,20 +17,35 @@ export function readMerchantPage(hash: string): MerchantPage {
 }
 
 /** Staff-facing wording, distinct from the customer wording in cartRules. */
+export function orderStatusStaffLabel(
+  status: OrderStatus,
+  language: Language = 'en',
+): string {
+  return translate(language, `m.status.${status}`);
+}
+
+export function paymentStatusStaffLabel(
+  status: PaymentStatus,
+  language: Language = 'en',
+): string {
+  return translate(language, `m.pay.${status}`);
+}
+
+/** English staff wording, kept for callers and tests that need a fixed table. */
 export const ORDER_STATUS_STAFF_LABELS: Record<OrderStatus, string> = {
-  accepted: 'Pending',
-  preparing: 'Preparing',
-  ready: 'Ready',
-  collected: 'Completed',
-  cancelled: 'Cancelled',
+  accepted: orderStatusStaffLabel('accepted'),
+  preparing: orderStatusStaffLabel('preparing'),
+  ready: orderStatusStaffLabel('ready'),
+  collected: orderStatusStaffLabel('collected'),
+  cancelled: orderStatusStaffLabel('cancelled'),
 };
 
 export const PAYMENT_STATUS_STAFF_LABELS: Record<PaymentStatus, string> = {
-  pending: 'Awaiting UPI',
-  dueAtCounter: 'Due at counter',
-  verified: 'Paid',
-  failed: 'Failed',
-  refunded: 'Refunded',
+  pending: paymentStatusStaffLabel('pending'),
+  dueAtCounter: paymentStatusStaffLabel('dueAtCounter'),
+  verified: paymentStatusStaffLabel('verified'),
+  failed: paymentStatusStaffLabel('failed'),
+  refunded: paymentStatusStaffLabel('refunded'),
 };
 
 /** Filter chips: "All" plus every status the shared contract defines. */
@@ -87,8 +103,8 @@ export function portionCount(order: OrderResponse): number {
 }
 
 /** Local time like "2:05 pm" for an ISO timestamp. */
-export function formatOrderTime(iso: string): string {
-  return new Intl.DateTimeFormat('en-IN', {
+export function formatOrderTime(iso: string, language: Language = 'en'): string {
+  return new Intl.DateTimeFormat(LOCALES[language], {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(iso));

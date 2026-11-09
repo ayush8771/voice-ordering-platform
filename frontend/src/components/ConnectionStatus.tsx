@@ -1,11 +1,13 @@
 import { useEffect, useState, type JSX } from 'react';
 import type { HealthResponse } from '@vop/shared';
 import { ApiRequestError, getHealth } from '../api/client';
+import { useI18n } from '../i18n/I18nProvider';
 
 type State =
   | { kind: 'loading' }
   | { kind: 'ok'; health: HealthResponse }
-  | { kind: 'error'; message: string };
+  /** `message` is the server's own text; undefined means a network failure. */
+  | { kind: 'error'; message: string | undefined };
 
 /**
  * Verifies client/server communication for the foundation milestone.
@@ -15,6 +17,7 @@ type State =
  * Status is conveyed by text, not color alone.
  */
 export function ConnectionStatus(): JSX.Element {
+  const { t } = useI18n();
   const [state, setState] = useState<State>({ kind: 'loading' });
 
   useEffect(() => {
@@ -29,9 +32,9 @@ export function ConnectionStatus(): JSX.Element {
         setState({
           kind: 'error',
           message:
-            error instanceof ApiRequestError
+            error instanceof ApiRequestError && error.status !== 0
               ? error.message
-              : 'Could not reach the server.',
+              : undefined,
         });
       });
 
@@ -52,27 +55,30 @@ export function ConnectionStatus(): JSX.Element {
       }}
     >
       <h2 style={{ fontSize: 'var(--font-size-body)', marginTop: 0 }}>
-        Backend connection
+        {t('conn.heading')}
       </h2>
 
-      {state.kind === 'loading' && <p>Checking the connection to the API…</p>}
+      {state.kind === 'loading' && <p>{t('conn.checking')}</p>}
 
       {state.kind === 'error' && (
         <p style={{ color: 'var(--color-error)' }}>
-          Not connected: {state.message} Start the backend and reload.
+          {t('conn.error', { message: state.message ?? t('error.network') })}
         </p>
       )}
 
       {state.kind === 'ok' && (
         <dl style={{ margin: 0, display: 'grid', gap: 'var(--space-2)' }}>
           <div>
-            <dt style={{ color: 'var(--color-text-muted)' }}>API status</dt>
+            <dt style={{ color: 'var(--color-text-muted)' }}>{t('conn.apiStatus')}</dt>
             <dd style={{ margin: 0, color: 'var(--color-success)' }}>
-              Connected — {state.health.status} ({state.health.apiVersion})
+              {t('conn.connected', {
+                status: state.health.status,
+                version: state.health.apiVersion,
+              })}
             </dd>
           </div>
           <div>
-            <dt style={{ color: 'var(--color-text-muted)' }}>MongoDB</dt>
+            <dt style={{ color: 'var(--color-text-muted)' }}>{t('conn.mongodb')}</dt>
             <dd style={{ margin: 0 }}>{state.health.dependencies.mongodb}</dd>
           </div>
         </dl>

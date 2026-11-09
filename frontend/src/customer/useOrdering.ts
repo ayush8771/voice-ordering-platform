@@ -12,6 +12,8 @@ import type {
 } from '@vop/shared';
 import * as api from '../api/client';
 import { ApiRequestError } from '../api/client';
+import type { MessageKey } from '../i18n/translate';
+import { classifyCartConflict } from './cartConflict';
 import { classifyConfirmFailure } from './confirmOutcome';
 
 /**
@@ -39,12 +41,14 @@ export interface OrderingState {
   readonly order: OrderResponse | undefined;
   /** When the order was last read successfully from the server. */
   readonly orderUpdatedAt: Date | undefined;
-  readonly language: Language;
   /** Set when the server said the assistant is unavailable for this session. */
   readonly assistantUnavailable: boolean;
   readonly lastAssistantText: string | undefined;
-  /** A customer-safe message about the last failure, if any. */
-  readonly error: string | undefined;
+  /**
+   * The last failure, if any: a frontend-owned message key (translated when
+   * shown) or the server's own safe message, shown exactly as sent.
+   */
+  readonly error: UiMessage | undefined;
   /** True while the session itself must be restarted before anything works. */
   readonly sessionLost: boolean;
   readonly busy: boolean;
@@ -69,13 +73,32 @@ export function readOutletId(search: string, hash: string): string | undefined {
   return fromHash === null || fromHash === '' ? undefined : fromHash;
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof ApiRequestError
-    ? error.message
-    : 'Something went wrong. Please try again or ask at the counter.';
+/** A failure message: a frontend-owned key, or server text kept verbatim. */
+export type UiMessage =
+  | { readonly kind: 'key'; readonly key: MessageKey }
+  | { readonly kind: 'server'; readonly text: string };
+
+function uiKey(key: MessageKey): UiMessage {
+  return { kind: 'key', key };
 }
 
-export function useOrdering(outletId: string, channel: Channel) {
+/**
+ * The client writes its own messages for a network failure (status 0) and for
+ * a response without the server's error envelope (no request ID); those are
+ * translated. A message from the server's envelope is shown as sent.
+ */
+export function messageOf(error: unknown): UiMessage {
+  if (!(error instanceof ApiRequestError)) return uiKey('error.generic');
+  if (error.status === 0) return uiKey('error.network');
+  if (error.requestId === undefined) return uiKey('error.unexpected');
+  return { kind: 'server', text: error.message };
+}
+
+/**
+ * `language` is the UI language (from the i18n provider). It is sent with
+ * each conversation turn and never resets the session, draft or order.
+ */
+export function useOrdering(outletId: string, channel: Channel, language: Language) {
   const [state, setState] = useState<OrderingState>({
     step: 'ordering',
     menu: undefined,
@@ -83,7 +106,6 @@ export function useOrdering(outletId: string, channel: Channel) {
     quote: undefined,
     order: undefined,
     orderUpdatedAt: undefined,
-    language: 'en',
     assistantUnavailable: false,
     lastAssistantText: undefined,
     error: undefined,
@@ -127,15 +149,29 @@ export function useOrdering(outletId: string, channel: Channel) {
       } catch (error) {
         if (error instanceof ApiRequestError && error.code === 'UNAUTHORIZED') {
           api.clearSessionId();
-          patch({ sessionLost: true, busy: false, error: error.message });
+          patch({ sessionLost: true, busy: false, error: messageOf(error) });
           return;
         }
-        if (error instanceof ApiRequestError && error.code === 'CONFLICT') {
+        if (
+          error instanceof ApiRequestError &&
+          error.code === 'CONFLICT' &&
+          classifyCartConflict(error.details) === 'revision'
+        ) {
           const cart = await api.getCart().catch(() => undefined);
           patch({
             ...(cart === undefined ? {} : { cart }),
             busy: false,
-            error: 'Your order changed while you were editing. Please check it below.',
+            error: uiKey('error.draftChanged'),
+          });
+          return;
+        }
+        // Any other 409 is a refusal that left the draft as it was: say why,
+        // never that it changed.
+        if (error instanceof ApiRequestError && error.status === 409) {
+          const message = messageOf(error);
+          patch({
+            busy: false,
+            error: message.kind === 'server' ? message : uiKey('error.cartConflict'),
           });
           return;
         }
@@ -250,7 +286,7 @@ export function useOrdering(outletId: string, channel: Channel) {
    */
   const openPayment = useCallback(() => {
     if (state.quote === undefined) {
-      patch({ error: 'Please review your order again before choosing how to pay.' });
+      patch({ error: uiKey('error.reviewBeforePay') });
       return;
     }
     patch({ step: 'payment', error: undefined });
@@ -275,14 +311,13 @@ export function useOrdering(outletId: string, channel: Channel) {
     async (paymentMethod: PaymentMethod): Promise<void> => {
       const quote = state.quote;
       if (quote === undefined) {
-        patch({ error: 'Please review your order again before confirming.' });
+        patch({ error: uiKey('error.reviewBeforeConfirm') });
         return;
       }
       const sent = attemptMethod.current;
       if (sent !== undefined && sent !== paymentMethod) {
         patch({
-          error:
-            'Your last attempt may already have reached the outlet, so please retry with the same payment choice.',
+          error: uiKey('error.sameMethod'),
         });
         return;
       }
@@ -326,8 +361,7 @@ export function useOrdering(outletId: string, channel: Channel) {
               step: 'review',
               lockedPaymentMethod: undefined,
               busy: false,
-              error:
-                'Your order was not placed: prices or availability changed. Please check the updated order and confirm again.',
+              error: uiKey('error.staleQuote'),
             });
           } catch {
             const cart = await api.getCart().catch(() => undefined);
@@ -337,8 +371,7 @@ export function useOrdering(outletId: string, channel: Channel) {
               step: 'ordering',
               lockedPaymentMethod: undefined,
               busy: false,
-              error:
-                'Your order was not placed because something on the menu changed. Please check your order.',
+              error: uiKey('error.menuChanged'),
             });
           }
           return;
@@ -381,8 +414,7 @@ export function useOrdering(outletId: string, channel: Channel) {
     // Never apply another order's capability to the order on screen.
     if (access === undefined || access.orderId !== orderId) {
       patch({
-        error:
-          'Live status is not available for this order on this screen. Please watch for your token at the counter.',
+        error: uiKey('error.noLiveStatus'),
       });
       return;
     }
@@ -410,8 +442,6 @@ export function useOrdering(outletId: string, channel: Channel) {
 
   // --- Conversation --------------------------------------------------------
 
-  const setLanguage = useCallback((language: Language) => patch({ language }), [patch]);
-
   /**
    * Sends one utterance. The reply is text; the draft shown afterwards is the
    * server's, never the assistant's account of it. A `503` switches the
@@ -431,7 +461,7 @@ export function useOrdering(outletId: string, channel: Channel) {
       patch({ busy: true, error: undefined });
       try {
         const turn: ConversationTurnResponse = await api.sendConversationTurn({
-          language: state.language,
+          language,
           phase,
           text,
           ...(declinedRecommendation ? { customerDeclinedRecommendation: true } : {}),
@@ -457,7 +487,7 @@ export function useOrdering(outletId: string, channel: Channel) {
         });
       }
     },
-    [patch, state.cart?.items.length, state.language, state.step],
+    [language, patch, state.cart?.items.length, state.step],
   );
 
   return {
@@ -475,7 +505,6 @@ export function useOrdering(outletId: string, channel: Channel) {
     confirm,
     refreshOrder,
     finish,
-    setLanguage,
     sendUtterance,
   };
 }

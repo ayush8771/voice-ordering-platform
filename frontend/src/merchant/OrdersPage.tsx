@@ -1,6 +1,7 @@
 import { useState, type JSX } from 'react';
 import { ORDER_STATUSES, type OrderResponse } from '@vop/shared';
 import { formatMoney } from '../customer/cartRules';
+import { useI18n } from '../i18n/I18nProvider';
 import {
   ComingSoonButton,
   OrderStatusBadge,
@@ -8,21 +9,19 @@ import {
   StateMessage,
 } from './components';
 import {
-  ORDER_STATUS_STAFF_LABELS,
   countByStatus,
   filterOrders,
   formatOrderTime,
+  orderStatusStaffLabel,
   type OrderFilter,
 } from './merchantRules';
-
-const CHANNEL_LABELS = { qr: 'QR', kiosk: 'Kiosk' } as const;
-const METHOD_LABELS = { upiQr: 'UPI QR', cashAtCounter: 'Cash' } as const;
 
 export function OrdersPage({
   orders,
 }: {
   orders: readonly OrderResponse[];
 }): JSX.Element {
+  const { t, tp, language } = useI18n();
   const [filter, setFilter] = useState<OrderFilter>('all');
   const counts = countByStatus(orders);
   const visible = filterOrders(orders, filter);
@@ -30,7 +29,7 @@ export function OrdersPage({
 
   return (
     <>
-      <div className="vop-m-filters" role="group" aria-label="Filter by order status">
+      <div className="vop-m-filters" role="group" aria-label={t('m.filters.label')}>
         {filters.map((f) => (
           <button
             key={f}
@@ -39,7 +38,7 @@ export function OrdersPage({
             aria-pressed={filter === f}
             onClick={() => setFilter(f)}
           >
-            {f === 'all' ? 'All' : ORDER_STATUS_STAFF_LABELS[f]}
+            {f === 'all' ? t('m.filters.all') : orderStatusStaffLabel(f, language)}
             <span className="vop-m-chip__count">
               {f === 'all' ? orders.length : counts[f]}
             </span>
@@ -47,17 +46,16 @@ export function OrdersPage({
         ))}
       </div>
 
-      <p className="vop-m-note">
-        Status changes (start preparing, mark ready, collected) and payment confirmation
-        need the merchant API and staff sign-in, so they are not available here yet.
-      </p>
+      <p className="vop-m-note">{t('m.orders.note')}</p>
 
       {visible.length === 0 ? (
         <StateMessage
           title={
             filter === 'all'
-              ? 'No orders yet'
-              : `No ${ORDER_STATUS_STAFF_LABELS[filter].toLowerCase()} orders`
+              ? t('m.orders.emptyAll')
+              : t('m.orders.emptyFiltered', {
+                  status: orderStatusStaffLabel(filter, language).toLocaleLowerCase(),
+                })
           }
           action={
             filter !== 'all' ? (
@@ -66,12 +64,12 @@ export function OrdersPage({
                 className="vop-m-button"
                 onClick={() => setFilter('all')}
               >
-                Show all orders
+                {t('m.orders.showAll')}
               </button>
             ) : undefined
           }
         >
-          {filter === 'all' ? 'New orders will appear here.' : 'Try another status.'}
+          {filter === 'all' ? t('m.orders.emptyAllBody') : t('m.orders.tryAnother')}
         </StateMessage>
       ) : (
         <ul className="vop-m-orders">
@@ -79,10 +77,15 @@ export function OrdersPage({
             <li key={o.orderId} className="vop-m-card vop-m-order">
               <div className="vop-m-order__head">
                 <div>
-                  <p className="vop-m-token">Token #{o.token}</p>
+                  <p className="vop-m-token">
+                    {t('m.orders.token', { token: o.token })}
+                  </p>
                   <p className="vop-m-muted">
-                    {o.orderId} · {CHANNEL_LABELS[o.channel]} ·{' '}
-                    <time dateTime={o.createdAt}>{formatOrderTime(o.createdAt)}</time>
+                    {o.orderId} · {t(o.channel === 'qr' ? 'common.qr' : 'common.kiosk')}{' '}
+                    ·{' '}
+                    <time dateTime={o.createdAt}>
+                      {formatOrderTime(o.createdAt, language)}
+                    </time>
                   </p>
                 </div>
                 <p className="vop-m-amount">{formatMoney(o.totalMinor, o.currency)}</p>
@@ -96,8 +99,7 @@ export function OrdersPage({
                       {item.optionIds.length > 0 && (
                         <span className="vop-m-muted">
                           {' '}
-                          (+{item.optionIds.length}{' '}
-                          {item.optionIds.length === 1 ? 'add-on' : 'add-ons'})
+                          {tp('m.orders.addOns', item.optionIds.length)}
                         </span>
                       )}
                     </span>
@@ -108,14 +110,16 @@ export function OrdersPage({
 
               <div className="vop-m-order__foot">
                 <span className="vop-m-order__badges">
-                  <span className="vop-m-muted">Order</span>
+                  <span className="vop-m-muted">{t('m.orders.order')}</span>
                   <OrderStatusBadge status={o.orderStatus} />
                   <span className="vop-m-muted">
-                    Payment ({METHOD_LABELS[o.paymentMethod]})
+                    {t('m.orders.payment', {
+                      method: t(`m.method.${o.paymentMethod}`),
+                    })}
                   </span>
                   <PaymentStatusBadge status={o.paymentStatus} />
                 </span>
-                <ComingSoonButton>Update status</ComingSoonButton>
+                <ComingSoonButton>{t('m.orders.updateStatus')}</ComingSoonButton>
               </div>
             </li>
           ))}

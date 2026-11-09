@@ -3,12 +3,14 @@ import type { MenuResponse } from '@vop/shared';
 import { ApiRequestError, getMenu } from '../api/client';
 import { formatMoney } from '../customer/cartRules';
 import { menuSections } from '../customer/menuDiscovery';
+import { useI18n } from '../i18n/I18nProvider';
 import { ComingSoonButton, StateMessage } from './components';
 
 type Load =
   | { readonly kind: 'loading' }
   | { readonly kind: 'ready'; readonly menu: MenuResponse }
-  | { readonly kind: 'error'; readonly message: string };
+  /** `message` is the server's own text; undefined when it was not reached. */
+  | { readonly kind: 'error'; readonly message: string | undefined };
 
 /**
  * Read-only view of the outlet's menu, from the same public menu route the
@@ -20,6 +22,7 @@ export function MenuManagementPage({
 }: {
   outletId: string | undefined;
 }): JSX.Element {
+  const { t, tp, rich } = useI18n();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
@@ -34,9 +37,9 @@ export function MenuManagementPage({
         setLoad({
           kind: 'error',
           message:
-            error instanceof ApiRequestError
+            error instanceof ApiRequestError && error.status !== 0
               ? error.message
-              : 'The server could not be reached.',
+              : undefined,
         });
       });
     return () => {
@@ -46,41 +49,39 @@ export function MenuManagementPage({
 
   const toolbar = (
     <div className="vop-m-toolbar">
-      <p className="vop-m-note">
-        Live public menu, read-only. Editing needs a merchant menu API, which does not
-        exist yet — nothing here is saved.
-      </p>
-      <ComingSoonButton>+ Add item</ComingSoonButton>
+      <p className="vop-m-note">{t('m.menu.note')}</p>
+      <ComingSoonButton>{t('m.menu.addItem')}</ComingSoonButton>
     </div>
   );
 
   if (outletId === undefined) {
     return (
-      <StateMessage tone="warning" title="No outlet selected">
-        Open this page with an outlet, for example{' '}
-        <code>#/merchant/menu?outlet=demo-outlet</code>.
+      <StateMessage tone="warning" title={t('m.menu.noOutletTitle')}>
+        {rich('m.menu.noOutletBody', {
+          example: <code>#/merchant/menu?outlet=demo-outlet</code>,
+        })}
       </StateMessage>
     );
   }
   if (load.kind === 'loading') {
-    return <StateMessage title="Loading menu…" />;
+    return <StateMessage title={t('m.menu.loading')} />;
   }
   if (load.kind === 'error') {
     return (
       <StateMessage
         tone="error"
-        title="Menu unavailable"
+        title={t('m.menu.unavailable')}
         action={
           <button
             type="button"
             className="vop-m-button vop-m-button--primary"
             onClick={() => setAttempt((n) => n + 1)}
           >
-            Retry
+            {t('common.retry')}
           </button>
         }
       >
-        {load.message}
+        {load.message ?? t('m.menu.unreachable')}
       </StateMessage>
     );
   }
@@ -90,8 +91,8 @@ export function MenuManagementPage({
     return (
       <>
         {toolbar}
-        <StateMessage title="No menu items">
-          This outlet has not published any items yet.
+        <StateMessage title={t('m.menu.emptyTitle')}>
+          {t('m.menu.emptyBody')}
         </StateMessage>
       </>
     );
@@ -108,9 +109,7 @@ export function MenuManagementPage({
         >
           <h2 id={`vop-m-cat-${category.id || 'other'}`}>
             {category.name}{' '}
-            <span className="vop-m-muted">
-              ({items.length} {items.length === 1 ? 'item' : 'items'})
-            </span>
+            <span className="vop-m-muted">{tp('m.menu.count', items.length)}</span>
           </h2>
           <ul className="vop-m-menu">
             {items.map((item) => (
@@ -122,7 +121,7 @@ export function MenuManagementPage({
                   )}
                   {item.options.length > 0 && (
                     <p className="vop-m-menu__options">
-                      Add-ons:{' '}
+                      {t('m.menu.addOns')}{' '}
                       {item.options
                         .map(
                           (o) =>
@@ -138,12 +137,14 @@ export function MenuManagementPage({
                 <span
                   className={`vop-m-badge ${item.available ? 'vop-m-badge--ready' : 'vop-m-badge--cancelled'}`}
                 >
-                  {item.available ? 'Available' : 'Sold out'}
+                  {item.available ? t('item.available') : t('item.soldOut')}
                 </span>
                 <div className="vop-m-menu__actions">
-                  <ComingSoonButton>Edit</ComingSoonButton>
+                  <ComingSoonButton>{t('m.menu.edit')}</ComingSoonButton>
                   <ComingSoonButton>
-                    {item.available ? 'Mark sold out' : 'Mark available'}
+                    {item.available
+                      ? t('m.menu.markSoldOut')
+                      : t('m.menu.markAvailable')}
                   </ComingSoonButton>
                 </div>
               </li>

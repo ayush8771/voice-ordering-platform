@@ -1,4 +1,5 @@
-import type { OrderResponse, OrderStatus } from '@vop/shared';
+import type { Language, OrderResponse, OrderStatus } from '@vop/shared';
+import { translate, translatePlural } from '../i18n/translate';
 
 /**
  * Display rules for the kitchen display (KDS). Pure functions over orders the
@@ -19,50 +20,36 @@ import type { OrderResponse, OrderStatus } from '@vop/shared';
 
 export type KitchenColumnId = 'new' | 'preparing' | 'ready';
 
+/**
+ * A kitchen column. Its title, description, next-step label and empty text are
+ * the `k.col.<id>.*` dictionary entries, so they follow the UI language.
+ */
 export interface KitchenColumnDef {
   readonly id: KitchenColumnId;
   readonly status: OrderStatus;
-  readonly title: string;
-  readonly description: string;
-  /** Label of the next-step control. The action itself is not available yet. */
-  readonly nextAction: string;
-  readonly emptyText: string;
 }
 
 export const KITCHEN_COLUMNS: readonly KitchenColumnDef[] = [
-  {
-    id: 'new',
-    status: 'accepted',
-    title: 'New',
-    description: 'Accepted, waiting to start',
-    nextAction: 'Start preparing',
-    emptyText: 'No new orders waiting.',
-  },
-  {
-    id: 'preparing',
-    status: 'preparing',
-    title: 'Preparing',
-    description: 'Being cooked now',
-    nextAction: 'Mark ready',
-    emptyText: 'Nothing is being prepared.',
-  },
-  {
-    id: 'ready',
-    status: 'ready',
-    title: 'Ready',
-    description: 'Waiting for pickup',
-    nextAction: 'Mark collected',
-    emptyText: 'No orders waiting for pickup.',
-  },
+  { id: 'new', status: 'accepted' },
+  { id: 'preparing', status: 'preparing' },
+  { id: 'ready', status: 'ready' },
 ];
 
-/** Kitchen wording for every shared status, including the hidden ones. */
+/** Kitchen wording for a shared status, including the hidden ones. */
+export function kitchenStatusLabel(
+  status: OrderStatus,
+  language: Language = 'en',
+): string {
+  return translate(language, `k.status.${status}`);
+}
+
+/** English kitchen wording for every shared status. */
 export const KITCHEN_STATUS_LABELS: Record<OrderStatus, string> = {
-  accepted: 'New',
-  preparing: 'Preparing',
-  ready: 'Ready',
-  collected: 'Collected',
-  cancelled: 'Cancelled',
+  accepted: kitchenStatusLabel('accepted'),
+  preparing: kitchenStatusLabel('preparing'),
+  ready: kitchenStatusLabel('ready'),
+  collected: kitchenStatusLabel('collected'),
+  cancelled: kitchenStatusLabel('cancelled'),
 };
 
 export function columnForStatus(status: OrderStatus): KitchenColumnId | undefined {
@@ -125,17 +112,21 @@ export function ageLevel(minutes: number, status: OrderStatus): AgeLevel {
 }
 
 /** "Just now", "7 min", "1 h 05 min". */
-export function formatElapsed(minutes: number): string {
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes} min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${h} h ${String(m).padStart(2, '0')} min`;
+export function formatElapsed(minutes: number, language: Language = 'en'): string {
+  if (minutes < 1) return translate(language, 'k.elapsed.now');
+  if (minutes < 60) return translate(language, 'k.elapsed.minutes', { minutes });
+  return translate(language, 'k.elapsed.hours', {
+    hours: Math.floor(minutes / 60),
+    minutes: String(minutes % 60).padStart(2, '0'),
+  });
 }
 
-export function addOnLabel(count: number): string | undefined {
+export function addOnLabel(
+  count: number,
+  language: Language = 'en',
+): string | undefined {
   if (count <= 0) return undefined;
-  return `+${count} ${count === 1 ? 'add-on' : 'add-ons'}`;
+  return translatePlural(language, 'k.addOns', count);
 }
 
 /** `#/kitchen`, `#/kitchen?outlet=x` (also tolerates a trailing slash). */

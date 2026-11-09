@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 import {
-  LANGUAGES,
   type CartLine,
   type CartResponse,
   type Channel,
-  type Language,
   type MenuCategory,
   type MenuItem,
   type MenuResponse,
@@ -27,6 +25,8 @@ import {
   orderStatusLabel,
 } from './cartRules';
 import { CheckoutProgress, PaymentStatusPanel, PaymentStep } from './PaymentStep';
+import { useI18n } from '../i18n/I18nProvider';
+import { LanguageChoice } from '../i18n/LanguagePicker';
 import { useOrdering } from './useOrdering';
 import { VoiceKioskPanel } from './VoiceKioskPanel';
 import './ordering.css';
@@ -41,12 +41,6 @@ import './ordering.css';
  * unavailable, or no speech client is supplied, every step below still works
  * (docs/PRD.md section 5).
  */
-
-const LANGUAGE_LABELS: Record<Language, string> = {
-  en: 'English',
-  kn: 'ಕನ್ನಡ',
-  hi: 'हिंदी',
-};
 
 /** Smooth scrolling only when the customer has not asked for less motion. */
 function scrollBehavior(): ScrollBehavior {
@@ -105,6 +99,7 @@ function MenuItemCard({
   disabled: boolean;
   onAdd: (optionIds: readonly string[]) => void;
 }): JSX.Element {
+  const { t, tp } = useI18n();
   const [selected, setSelected] = useState<readonly string[]>([]);
 
   const toggle = (optionId: string): void => {
@@ -116,7 +111,6 @@ function MenuItemCard({
   };
 
   const statusId = `vop-item-status-${item.id}`;
-  const addOnWord = selected.length === 1 ? 'add-on' : 'add-ons';
 
   return (
     <li
@@ -134,7 +128,7 @@ function MenuItemCard({
         id={statusId}
         className={`vop-badge ${item.available ? 'vop-badge--available' : 'vop-badge--unavailable'}`}
       >
-        {item.available ? 'Available' : 'Sold out'}
+        {item.available ? t('item.available') : t('item.soldOut')}
       </p>
 
       {item.description !== undefined && (
@@ -144,14 +138,14 @@ function MenuItemCard({
       {item.options.length > 0 && (
         <fieldset className="vop-options" disabled={!item.available}>
           <legend>
-            Add-ons <span className="vop-muted">(optional, choose any)</span>
+            {t('item.addOns')} <span className="vop-muted">{t('item.addOnsHint')}</span>
           </legend>
           <div className="vop-options__list">
             {item.options.map((option) => {
               const checked = selected.includes(option.id);
               const delta =
                 option.priceDeltaMinor === 0
-                  ? 'No extra charge'
+                  ? t('item.noExtraCharge')
                   : `${option.priceDeltaMinor > 0 ? '+' : '−'}${formatMoney(
                       Math.abs(option.priceDeltaMinor),
                       item.currency,
@@ -190,8 +184,9 @@ function MenuItemCard({
               setSelected([]);
             }}
           >
-            Add {item.name}
-            {selected.length > 0 && ` with ${selected.length} ${addOnWord}`}
+            {selected.length > 0
+              ? tp('item.addWith', selected.length, { name: item.name })
+              : t('item.add', { name: item.name })}
           </button>
         ) : (
           <button
@@ -199,7 +194,7 @@ function MenuItemCard({
             className="vop-button vop-button--block vop-item__soldout"
             disabled
           >
-            Sold out — cannot be added
+            {t('item.soldOutButton')}
           </button>
         )}
       </div>
@@ -223,7 +218,8 @@ function CartLineRow({
   onQuantity: (quantity: number) => void;
   onRemove: () => void;
 }): JSX.Element {
-  const addOns = describeOptions(menu, line.menuItemId, line.optionIds);
+  const { t, language } = useI18n();
+  const addOns = describeOptions(menu, line.menuItemId, line.optionIds, language);
   return (
     <li
       className={`vop-card vop-cart-line${line.available ? '' : ' vop-cart-line--unavailable'}`}
@@ -244,8 +240,11 @@ function CartLineRow({
 
       {!line.available && (
         <p className="vop-warning" style={{ margin: 'var(--space-2) 0' }}>
-          Not orderable: {line.issues.map(cartIssueMessage).join(' ')} It is not
-          included in your total.
+          {t('cart.notOrderable', {
+            reasons: line.issues
+              .map((issue) => cartIssueMessage(issue, language))
+              .join(' '),
+          })}
         </p>
       )}
 
@@ -254,19 +253,22 @@ function CartLineRow({
           type="button"
           className="vop-button"
           disabled={disabled || !line.available}
-          aria-label={`Fewer ${line.name}`}
+          aria-label={t('cart.fewer', { name: line.name })}
           onClick={() => onQuantity(line.quantity - 1)}
         >
           −
         </button>
-        <span className="vop-qty__value" aria-label={`Quantity of ${line.name}`}>
+        <span
+          className="vop-qty__value"
+          aria-label={t('cart.quantityOf', { name: line.name })}
+        >
           {line.quantity}
         </span>
         <button
           type="button"
           className="vop-button"
           disabled={disabled || !line.available}
-          aria-label={`More ${line.name}`}
+          aria-label={t('cart.more', { name: line.name })}
           onClick={() => onQuantity(line.quantity + 1)}
         >
           +
@@ -275,10 +277,10 @@ function CartLineRow({
           type="button"
           className="vop-button vop-qty__remove"
           disabled={disabled}
-          aria-label={`Remove ${line.name}`}
+          aria-label={t('cart.removeItem', { name: line.name })}
           onClick={onRemove}
         >
-          Remove
+          {t('cart.remove')}
         </button>
       </div>
     </li>
@@ -307,18 +309,16 @@ function AssistantPanel({
   speech: SpeechClients | undefined;
   onSend: (text: string) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const [text, setText] = useState('');
   const voiceReady = speech?.capture !== undefined && speech?.stt !== undefined;
 
   return (
     <section className="vop-card vop-assistant">
-      <h2>Ask for something</h2>
+      <h2>{t('assistant.heading')}</h2>
 
       {unavailable ? (
-        <p className="vop-warning">
-          The assistant is unavailable right now. Please use the menu below — your order
-          is unaffected.
-        </p>
+        <p className="vop-warning">{t('assistant.unavailable')}</p>
       ) : (
         <form
           onSubmit={(event) => {
@@ -330,7 +330,7 @@ function AssistantPanel({
           }}
         >
           <label>
-            <span className="vop-muted">Type what you would like</span>
+            <span className="vop-muted">{t('assistant.typeLabel')}</span>
             <input
               className="vop-input"
               value={text}
@@ -342,15 +342,14 @@ function AssistantPanel({
             className="vop-button vop-button--primary"
             disabled={disabled}
           >
-            Send
+            {t('assistant.send')}
           </button>
         </form>
       )}
 
       {!voiceReady && !unavailable && (
         <p className="vop-muted" style={{ marginBottom: 0 }}>
-          Voice input is not available in this build. Typing and the menu work the same
-          way.
+          {t('assistant.noVoice')}
         </p>
       )}
 
@@ -373,8 +372,21 @@ export function CustomerOrdering({
   /** Absent until the backend speech routes and Gnani schemas are verified. */
   speech?: SpeechClients;
 }): JSX.Element {
-  const flow = useOrdering(outletId, channel);
+  const { t, tp, language } = useI18n();
+  const flow = useOrdering(outletId, channel, language);
   const { state } = flow;
+  /** Frontend-owned errors are translated; server messages are shown as sent. */
+  const errorText =
+    state.error === undefined
+      ? undefined
+      : state.error.kind === 'key'
+        ? t(state.error.key)
+        : state.error.text;
+  const languageBar = (
+    <div className="vop-language-bar">
+      <LanguageChoice />
+    </div>
+  );
   /**
    * No method is preselected: the customer chooses one on the payment step.
    * Cleared for the next customer so a shared kiosk never carries it over.
@@ -389,7 +401,7 @@ export function CustomerOrdering({
   /** `undefined` shows every category. */
   const [activeCategory, setActiveCategory] = useState<string | undefined>(undefined);
   const isKiosk = channel === 'kiosk';
-  const blocked = checkoutBlockedReason(state.cart);
+  const blocked = checkoutBlockedReason(state.cart, language);
 
   /**
    * Each checkout step replaces the whole screen, which would leave keyboard
@@ -425,18 +437,16 @@ export function CustomerOrdering({
   if (state.sessionLost) {
     return (
       <main className={frameClass(true)}>
-        <h1>Session ended</h1>
-        <p aria-live="polite">
-          This ordering session has expired, so the draft is gone. Start again, or order
-          at the counter.
-        </p>
+        {languageBar}
+        <h1>{t('session.endedTitle')}</h1>
+        <p aria-live="polite">{t('session.endedBody')}</p>
         <div className="vop-actions">
           <button
             type="button"
             className="vop-button vop-button--primary"
             onClick={startOver}
           >
-            Start a new order
+            {t('session.startNew')}
           </button>
         </div>
       </main>
@@ -446,11 +456,14 @@ export function CustomerOrdering({
   if (state.startupFailed || state.menu === undefined) {
     return (
       <main className={frameClass(true)}>
-        <h1>Ordering</h1>
+        {languageBar}
+        <h1>{t('startup.title')}</h1>
         <p aria-live="polite">
           {state.startupFailed
-            ? `We could not load the menu: ${state.error ?? 'connection problem.'} The menu is not empty — please retry or order at the counter.`
-            : 'Loading the menu…'}
+            ? t('startup.failed', {
+                reason: errorText ?? t('startup.connectionProblem'),
+              })
+            : t('startup.loading')}
         </p>
         {state.startupFailed && (
           <div className="vop-actions">
@@ -459,7 +472,7 @@ export function CustomerOrdering({
               className="vop-button vop-button--primary"
               onClick={() => void flow.start()}
             >
-              Retry
+              {t('common.retry')}
             </button>
           </div>
         )}
@@ -475,18 +488,21 @@ export function CustomerOrdering({
     const order = state.order;
     return (
       <main className={frameClass(true)}>
-        <h1>Order confirmed</h1>
+        {languageBar}
+        <h1>{t('tracking.title')}</h1>
         <CheckoutProgress current="confirmed" />
         <div className="vop-pay-stack">
           <section className="vop-card" aria-live="polite">
             <p className="vop-muted" style={{ margin: 0 }}>
-              Pickup token
+              {t('tracking.token')}
             </p>
             <p className="vop-token">{order.token}</p>
             <p className="vop-pay-order-state">
-              <span className="vop-pay-tag">Order confirmed</span>
+              <span className="vop-pay-tag">{t('tracking.orderConfirmed')}</span>
               <span className="vop-muted">
-                Kitchen: {orderStatusLabel(order.orderStatus)}
+                {t('tracking.kitchen', {
+                  status: orderStatusLabel(order.orderStatus, language),
+                })}
               </span>
             </p>
           </section>
@@ -496,14 +512,14 @@ export function CustomerOrdering({
           {flow.canTrackLive ? (
             state.orderUpdatedAt !== undefined && (
               <p className="vop-muted" style={{ margin: 0 }}>
-                Last updated {formatUpdatedTime(state.orderUpdatedAt)}
+                {t('tracking.lastUpdated', {
+                  time: formatUpdatedTime(state.orderUpdatedAt, language),
+                })}
               </p>
             )
           ) : (
             <p className="vop-warning" style={{ margin: 0 }}>
-              Live status updates are not available for this order on this screen, so
-              the statuses above will not change here. Please watch for token{' '}
-              {order.token} at the counter.
+              {t('tracking.noLive', { token: order.token })}
             </p>
           )}
         </div>
@@ -515,14 +531,14 @@ export function CustomerOrdering({
               className="vop-button"
               onClick={() => void flow.refreshOrder()}
             >
-              Refresh status
+              {t('tracking.refresh')}
             </button>
           )}
           <button type="button" className="vop-button" onClick={startOver}>
-            Start another order
+            {t('tracking.another')}
           </button>
         </div>
-        {state.error !== undefined && <ErrorMessage>{state.error}</ErrorMessage>}
+        {errorText !== undefined && <ErrorMessage>{errorText}</ErrorMessage>}
       </main>
     );
   }
@@ -533,7 +549,8 @@ export function CustomerOrdering({
     const quote = state.quote;
     return (
       <main className={frameClass(true)}>
-        <h1>Review your order</h1>
+        {languageBar}
+        <h1>{t('review.title')}</h1>
         <CheckoutProgress current="review" />
         <ul className="vop-list" style={{ margin: 'var(--space-4) 0' }}>
           {quote.items.map((line, index) => (
@@ -545,7 +562,7 @@ export function CustomerOrdering({
                 {line.quantity} × {line.name}
                 {line.optionIds.length > 0 && (
                   <span className="vop-line-options vop-muted">
-                    + {describeOptions(menu, line.menuItemId, line.optionIds)}
+                    + {describeOptions(menu, line.menuItemId, line.optionIds, language)}
                   </span>
                 )}
               </span>
@@ -556,12 +573,12 @@ export function CustomerOrdering({
           ))}
         </ul>
         <p className="vop-total">
-          <span>Total</span>
+          <span>{t('common.total')}</span>
           <span>{formatMoney(quote.totalMinor, quote.currency)}</span>
         </p>
 
         <p className="vop-muted" style={{ margin: 0 }}>
-          Check your items and total. You choose how to pay on the next step.
+          {t('review.hint')}
         </p>
 
         <div className="vop-actions">
@@ -571,14 +588,14 @@ export function CustomerOrdering({
             disabled={state.busy}
             onClick={flow.openPayment}
           >
-            Continue to payment
+            {t('review.continue')}
           </button>
           <button type="button" className="vop-button" onClick={flow.backToOrdering}>
-            Back to the menu
+            {t('review.backToMenu')}
           </button>
         </div>
 
-        {state.error !== undefined && <ErrorMessage>{state.error}</ErrorMessage>}
+        {errorText !== undefined && <ErrorMessage>{errorText}</ErrorMessage>}
       </main>
     );
   }
@@ -588,13 +605,14 @@ export function CustomerOrdering({
   if (state.step === 'payment' && state.quote !== undefined) {
     return (
       <main className={frameClass(true)}>
+        {languageBar}
         <PaymentStep
           quote={state.quote}
           menu={menu}
           method={state.lockedPaymentMethod ?? paymentMethod}
           lockedMethod={state.lockedPaymentMethod}
           busy={state.busy}
-          error={state.error}
+          error={errorText}
           onSelect={setPaymentMethod}
           onConfirm={(method) => void flow.confirm(method)}
           onBack={flow.backToReview}
@@ -626,10 +644,13 @@ export function CustomerOrdering({
     searchInput.current?.focus();
   };
 
+  const trimmed = query.trim();
   const resultSummary = searching
-    ? `${visibleCount} ${visibleCount === 1 ? 'dish matches' : 'dishes match'} “${query.trim()}”${activeName !== undefined ? ` in ${activeName}` : ''}.`
+    ? activeName !== undefined
+      ? tp('results.searchIn', visibleCount, { query: trimmed, category: activeName })
+      : tp('results.search', visibleCount, { query: trimmed })
     : activeName !== undefined
-      ? `Showing ${activeName}: ${visibleCount} ${visibleCount === 1 ? 'dish' : 'dishes'}.`
+      ? tp('results.showing', visibleCount, { category: activeName })
       : '';
 
   return (
@@ -637,27 +658,10 @@ export function CustomerOrdering({
       <header className="vop-header">
         <h1>{menu.outlet.name}</h1>
         <p className="vop-muted" style={{ margin: 0 }}>
-          {isKiosk ? 'Kiosk ordering' : 'Ordering on your phone'}
+          {isKiosk ? t('order.kioskSubtitle') : t('order.qrSubtitle')}
         </p>
 
-        <fieldset className="vop-language">
-          <legend className="vop-muted">Language</legend>
-          {LANGUAGES.map((language) => (
-            <label
-              key={language}
-              lang={language}
-              className={`vop-choice${state.language === language ? ' vop-choice--selected' : ''}`}
-            >
-              <input
-                type="radio"
-                name="language"
-                checked={state.language === language}
-                onChange={() => flow.setLanguage(language)}
-              />
-              {LANGUAGE_LABELS[language]}
-            </label>
-          ))}
-        </fieldset>
+        <LanguageChoice />
       </header>
 
       <div className="vop-layout">
@@ -665,7 +669,7 @@ export function CustomerOrdering({
           {isKiosk ? (
             <VoiceKioskPanel
               speech={speech}
-              language={state.language}
+              language={language}
               assistantUnavailable={state.assistantUnavailable}
               lastAssistantText={state.lastAssistantText}
               busy={state.busy}
@@ -681,11 +685,11 @@ export function CustomerOrdering({
             />
           )}
 
-          {state.error !== undefined && <ErrorMessage>{state.error}</ErrorMessage>}
+          {errorText !== undefined && <ErrorMessage>{errorText}</ErrorMessage>}
 
-          <h2>Menu</h2>
+          <h2>{t('menu.heading')}</h2>
           {allSections.length === 0 ? (
-            <p>This outlet has published no items yet. Please ask at the counter.</p>
+            <p>{t('menu.empty')}</p>
           ) : (
             <div className="vop-discovery">
               <form
@@ -697,7 +701,7 @@ export function CustomerOrdering({
                 }}
               >
                 <label className="vop-search__label" htmlFor="vop-menu-search">
-                  Search dishes
+                  {t('search.label')}
                 </label>
                 <div className="vop-search__row">
                   <input
@@ -706,7 +710,7 @@ export function CustomerOrdering({
                     className="vop-input vop-search__input"
                     type="search"
                     autoComplete="off"
-                    placeholder="e.g. dosa"
+                    placeholder={t('search.placeholder')}
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     onKeyDown={(event) => {
@@ -722,14 +726,14 @@ export function CustomerOrdering({
                       className="vop-button vop-search__clear"
                       onClick={clearSearch}
                     >
-                      Clear
+                      {t('search.clear')}
                     </button>
                   )}
                 </div>
               </form>
 
               {allSections.length > 1 && (
-                <nav className="vop-categories" aria-label="Menu categories">
+                <nav className="vop-categories" aria-label={t('categories.label')}>
                   <ul>
                     <li>
                       <button
@@ -738,7 +742,7 @@ export function CustomerOrdering({
                         aria-pressed={category === undefined}
                         onClick={() => chooseCategory(undefined)}
                       >
-                        All
+                        {t('categories.all')}
                         {searching && (
                           <span className="vop-category-chip__count">
                             {itemCount(searched)}
@@ -781,12 +785,15 @@ export function CustomerOrdering({
                   <div className="vop-card vop-empty">
                     <p className="vop-empty__title">
                       {searching
-                        ? `No dishes match “${query.trim()}”${activeName !== undefined ? ` in ${activeName}` : ''}.`
-                        : 'No dishes in this category.'}
+                        ? activeName !== undefined
+                          ? t('empty.searchIn', {
+                              query: trimmed,
+                              category: activeName,
+                            })
+                          : t('empty.search', { query: trimmed })
+                        : t('empty.category')}
                     </p>
-                    <p className="vop-muted">
-                      Check the spelling, try a shorter word, or browse all categories.
-                    </p>
+                    <p className="vop-muted">{t('empty.hint')}</p>
                     <div className="vop-actions">
                       {searching && (
                         <button
@@ -794,7 +801,7 @@ export function CustomerOrdering({
                           className="vop-button vop-button--primary"
                           onClick={clearSearch}
                         >
-                          Clear search
+                          {t('empty.clearSearch')}
                         </button>
                       )}
                       {category !== undefined && (
@@ -803,7 +810,7 @@ export function CustomerOrdering({
                           className="vop-button"
                           onClick={() => chooseCategory(undefined)}
                         >
-                          Show all categories
+                          {t('empty.showAll')}
                         </button>
                       )}
                     </div>
@@ -833,15 +840,13 @@ export function CustomerOrdering({
           )}
         </div>
 
-        <aside className="vop-layout__cart" aria-label="Your order">
+        <aside className="vop-layout__cart" aria-label={t('cart.heading')}>
           <section aria-live="polite" className="vop-cart">
             <h2 ref={cartHeading} tabIndex={-1}>
-              Your order
+              {t('cart.heading')}
             </h2>
             {cart === undefined || cart.items.length === 0 ? (
-              <p className="vop-muted">
-                Nothing added yet. Browse the menu, or ask for something above.
-              </p>
+              <p className="vop-muted">{t('cart.empty')}</p>
             ) : (
               <>
                 <ul className="vop-list">
@@ -862,7 +867,7 @@ export function CustomerOrdering({
                   ))}
                 </ul>
                 <p className="vop-total">
-                  <span>Total</span>
+                  <span>{t('common.total')}</span>
                   <span>{formatMoney(cart.totalMinor, cart.currency)}</span>
                 </p>
               </>
@@ -875,7 +880,7 @@ export function CustomerOrdering({
                 disabled={state.busy || blocked !== undefined}
                 onClick={() => void flow.openReview()}
               >
-                Review and confirm
+                {t('cart.review')}
               </button>
               {hasLines && (
                 <button
@@ -883,7 +888,7 @@ export function CustomerOrdering({
                   className="vop-button vop-button--block"
                   onClick={() => void flow.clearDraft()}
                 >
-                  Clear order
+                  {t('cart.clear')}
                 </button>
               )}
             </div>
@@ -899,10 +904,7 @@ export function CustomerOrdering({
             className="vop-button vop-button--primary"
             onClick={() => jumpTo(cartHeading.current)}
           >
-            <span>
-              View your order ({portionCount(cart)}{' '}
-              {portionCount(cart) === 1 ? 'item' : 'items'})
-            </span>
+            <span>{tp('cart.view', portionCount(cart))}</span>
             <span>{formatMoney(cart.totalMinor, cart.currency)}</span>
           </button>
         </div>

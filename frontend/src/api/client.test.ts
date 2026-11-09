@@ -111,6 +111,23 @@ describe('session transport', () => {
     expect((error as ApiRequestError).code).toBe('CONFLICT');
     expect((error as ApiRequestError).status).toBe(409);
     expect((error as ApiRequestError).requestId).toBe('req-1');
+    expect((error as ApiRequestError).details).toBeUndefined();
+  });
+
+  it('keeps the envelope details, and drops a non-array value', async () => {
+    let details: unknown = [{ revision: 4 }];
+    stubFetch(() =>
+      respond(
+        { error: { code: 'CONFLICT', message: 'x', requestId: 'r', details } },
+        409,
+      ),
+    );
+    const first = await getCart().catch((caught: unknown) => caught);
+    expect((first as ApiRequestError).details).toEqual([{ revision: 4 }]);
+
+    details = { revision: 4 };
+    const second = await getCart().catch((caught: unknown) => caught);
+    expect((second as ApiRequestError).details).toBeUndefined();
   });
 
   it('reports an unreachable server without claiming the call was applied', async () => {

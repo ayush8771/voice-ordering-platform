@@ -1,4 +1,5 @@
-import type { OrderResponse, PaymentMethod } from '@vop/shared';
+import type { Language, OrderResponse, PaymentMethod } from '@vop/shared';
+import { translate } from '../i18n/translate';
 
 /**
  * Customer payment display rules. Pure functions over what the server
@@ -10,6 +11,9 @@ import type { OrderResponse, PaymentMethod } from '@vop/shared';
  *  - no QR code, UPI ID or payment link is generated or shown;
  *  - `'verified'` is the only status that reads as paid, and it is only ever
  *    shown when the server returns it.
+ *
+ * Wording lives in the i18n dictionaries (`payview.*`, `method.*`); these
+ * helpers take the UI language and default to English.
  */
 
 /**
@@ -26,34 +30,29 @@ export interface PaymentMethodCopy {
   readonly steps: readonly string[];
 }
 
-export const PAYMENT_METHOD_COPY: Record<PaymentMethod, PaymentMethodCopy> = {
-  upiQr: {
-    title: 'UPI',
-    summary: UPI_ONLINE_PAYMENT_AVAILABLE
-      ? 'Pay with any UPI app.'
-      : 'Online UPI is not connected yet. Staff confirm your payment at the counter.',
-    steps: [
-      'Confirm your order to get a pickup token.',
-      'Go to the counter with your token to pay.',
-      'Staff confirm your payment. This screen updates once they do.',
-    ],
-  },
-  cashAtCounter: {
-    title: 'Cash on pickup',
-    summary: 'Pay in cash at the counter when you collect your order.',
-    steps: [
-      'Confirm your order to get a pickup token.',
-      'Pay in cash at the counter when you collect your order.',
-      'Staff record your payment. This screen updates once they do.',
-    ],
-  },
-};
+export function paymentMethodCopy(
+  method: PaymentMethod,
+  language: Language = 'en',
+): PaymentMethodCopy {
+  const t = (suffix: 'title' | 'summary' | 'step1' | 'step2' | 'step3'): string =>
+    translate(language, `method.${method}.${suffix}`);
+  return {
+    title: t('title'),
+    summary:
+      method === 'upiQr' && UPI_ONLINE_PAYMENT_AVAILABLE
+        ? translate(language, 'method.upiQr.summaryOnline')
+        : t('summary'),
+    steps: [t('step1'), t('step2'), t('step3')],
+  };
+}
 
 /** Words for the payment line on the tracking screen. */
-export const PAYMENT_METHOD_SHORT: Record<PaymentMethod, string> = {
-  upiQr: 'UPI',
-  cashAtCounter: 'Cash on pickup',
-};
+export function paymentMethodShort(
+  method: PaymentMethod,
+  language: Language = 'en',
+): string {
+  return translate(language, `method.${method}.short`);
+}
 
 export type PaymentTone = 'neutral' | 'pending' | 'success' | 'error';
 
@@ -81,8 +80,6 @@ export type PaymentViewKind = (typeof PAYMENT_VIEW_KINDS)[number];
 export interface PaymentView {
   readonly kind: PaymentViewKind;
   readonly tone: PaymentTone;
-  readonly title: string;
-  readonly body: string;
   /**
    * `server`: driven by a value the API returns today.
    * `client`: a real fact the client knows (no selection, no provider).
@@ -91,94 +88,37 @@ export interface PaymentView {
   readonly source: 'server' | 'client' | 'placeholder';
 }
 
-const NOT_PAID_YET = 'Your order is confirmed, but your payment is not yet.';
+const view = (
+  kind: PaymentViewKind,
+  tone: PaymentTone,
+  source: PaymentView['source'],
+): PaymentView => ({ kind, tone, source });
 
 export const PAYMENT_VIEWS: Record<PaymentViewKind, PaymentView> = {
-  notSelected: {
-    kind: 'notSelected',
-    tone: 'neutral',
-    title: 'Choose how to pay',
-    body: 'Pick UPI or cash on pickup to continue. Nothing is charged on this screen.',
-    source: 'client',
-  },
-  awaitingUpi: {
-    kind: 'awaitingUpi',
-    tone: 'pending',
-    title: 'Payment pending',
-    body: `${NOT_PAID_YET} Online UPI is not connected, so nothing has been charged. Pay at the counter with your token; staff will confirm it.`,
-    source: 'server',
-  },
-  dueAtCounter: {
-    kind: 'dueAtCounter',
-    tone: 'pending',
-    title: 'Pay at the counter',
-    body: `${NOT_PAID_YET} Pay in cash at the counter when you collect your order.`,
-    source: 'server',
-  },
-  pending: {
-    kind: 'pending',
-    tone: 'pending',
-    title: 'Payment pending',
-    body: `${NOT_PAID_YET} Staff will confirm it at the counter.`,
-    source: 'server',
-  },
-  successful: {
-    kind: 'successful',
-    tone: 'success',
-    title: 'Payment confirmed',
-    body: 'The outlet has confirmed your payment.',
-    source: 'server',
-  },
-  failed: {
-    kind: 'failed',
-    tone: 'error',
-    title: 'Payment failed',
-    body: 'No payment was recorded for this order. Please pay at the counter or ask staff for help.',
-    source: 'server',
-  },
-  refunded: {
-    kind: 'refunded',
-    tone: 'neutral',
-    title: 'Payment refunded',
-    body: 'The outlet has recorded a refund for this order. Ask at the counter if you have questions.',
-    source: 'server',
-  },
-  orderCancelled: {
-    kind: 'orderCancelled',
-    tone: 'error',
-    title: 'Order cancelled',
-    body: 'This order was cancelled. Please ask at the counter about any payment you made.',
-    source: 'server',
-  },
-  unknown: {
-    kind: 'unknown',
-    tone: 'neutral',
-    title: 'Payment status unknown',
-    body: 'We could not read your payment status. Please ask at the counter.',
-    source: 'server',
-  },
-  providerUnavailable: {
-    kind: 'providerUnavailable',
-    tone: 'neutral',
-    title: 'Online UPI payment unavailable',
-    body: 'Online UPI is not connected yet, so no QR code, UPI ID or payment link is shown here. You can still order and pay at the counter.',
-    source: 'client',
-  },
-  verifying: {
-    kind: 'verifying',
-    tone: 'pending',
-    title: 'Checking your payment',
-    body: 'We are waiting for the payment provider to confirm your payment.',
-    source: 'placeholder',
-  },
-  paymentCancelled: {
-    kind: 'paymentCancelled',
-    tone: 'neutral',
-    title: 'Payment cancelled',
-    body: 'The payment was cancelled before it completed. Your order is still confirmed — pay at the counter.',
-    source: 'placeholder',
-  },
+  notSelected: view('notSelected', 'neutral', 'client'),
+  awaitingUpi: view('awaitingUpi', 'pending', 'server'),
+  dueAtCounter: view('dueAtCounter', 'pending', 'server'),
+  pending: view('pending', 'pending', 'server'),
+  successful: view('successful', 'success', 'server'),
+  failed: view('failed', 'error', 'server'),
+  refunded: view('refunded', 'neutral', 'server'),
+  orderCancelled: view('orderCancelled', 'error', 'server'),
+  unknown: view('unknown', 'neutral', 'server'),
+  providerUnavailable: view('providerUnavailable', 'neutral', 'client'),
+  verifying: view('verifying', 'pending', 'placeholder'),
+  paymentCancelled: view('paymentCancelled', 'neutral', 'placeholder'),
 };
+
+/** Title and body for a payment state, in the UI language. */
+export function paymentViewText(
+  kind: PaymentViewKind,
+  language: Language = 'en',
+): { readonly title: string; readonly body: string } {
+  return {
+    title: translate(language, `payview.${kind}.title`),
+    body: translate(language, `payview.${kind}.body`),
+  };
+}
 
 /**
  * The payment state to show for a server-returned order. Only server values

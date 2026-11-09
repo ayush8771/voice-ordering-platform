@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  LANGUAGES,
   ORDER_STATUSES,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   type OrderResponse,
 } from '@vop/shared';
 import {
-  PAYMENT_METHOD_COPY,
   PAYMENT_VIEWS,
   PAYMENT_VIEW_KINDS,
   UPI_ONLINE_PAYMENT_AVAILABLE,
+  paymentMethodCopy,
   paymentViewForOrder,
+  paymentViewText,
 } from './paymentRules';
 
 type Fields = Pick<OrderResponse, 'orderStatus' | 'paymentStatus' | 'paymentMethod'>;
@@ -47,7 +49,9 @@ describe('paymentViewForOrder', () => {
       order({ paymentMethod: 'upiQr', paymentStatus: 'pending' }),
     );
     expect(view.kind).toBe(UPI_ONLINE_PAYMENT_AVAILABLE ? 'pending' : 'awaitingUpi');
-    expect(view.body).not.toMatch(/\bpaid\b|confirmed your payment/i);
+    expect(paymentViewText(view.kind).body).not.toMatch(
+      /\bpaid\b|confirmed your payment/i,
+    );
   });
 
   it('maps failed and refunded payments', () => {
@@ -105,11 +109,27 @@ describe('payment copy', () => {
 
   it('describes every payment method without inventing a UPI ID or link', () => {
     for (const method of PAYMENT_METHODS) {
-      const copy = PAYMENT_METHOD_COPY[method];
+      const copy = paymentMethodCopy(method);
       expect(copy.steps.length).toBeGreaterThan(0);
       expect([copy.summary, ...copy.steps].join(' ')).not.toMatch(
         /@|upi:\/\/|https?:/i,
       );
+    }
+  });
+
+  it('has wording for every payment state and method in all three languages', () => {
+    for (const language of LANGUAGES) {
+      for (const kind of PAYMENT_VIEW_KINDS) {
+        const text = paymentViewText(kind, language);
+        expect(text.title).not.toBe('');
+        expect(text.body).not.toBe('');
+      }
+      for (const method of PAYMENT_METHODS) {
+        const copy = paymentMethodCopy(method, language);
+        expect([copy.summary, ...copy.steps].join(' ')).not.toMatch(
+          /@|upi:\/\/|https?:/i,
+        );
+      }
     }
   });
 });

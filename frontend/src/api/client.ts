@@ -31,13 +31,22 @@ export class ApiRequestError extends Error {
   readonly status: number;
   readonly code: string;
   readonly requestId: string | undefined;
+  /** The envelope's `details`, unvalidated; shapes vary by error (docs/API.md). */
+  readonly details: readonly unknown[] | undefined;
 
-  constructor(status: number, code: string, message: string, requestId?: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    requestId?: string,
+    details?: readonly unknown[],
+  ) {
     super(message);
     this.name = 'ApiRequestError';
     this.status = status;
     this.code = code;
     this.requestId = requestId;
+    this.details = details;
   }
 }
 
@@ -175,6 +184,7 @@ async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<
         body.error.code,
         body.error.message,
         body.error.requestId,
+        Array.isArray(body.error.details) ? body.error.details : undefined,
       );
     }
     throw new ApiRequestError(

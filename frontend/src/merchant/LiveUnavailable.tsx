@@ -1,5 +1,6 @@
 import { useEffect, useState, type JSX } from 'react';
 import { getHealth } from '../api/client';
+import { useI18n } from '../i18n/I18nProvider';
 import { StateMessage } from './components';
 
 /**
@@ -8,6 +9,7 @@ import { StateMessage } from './components';
  * exists. It never fabricates live numbers.
  */
 export function LiveUnavailable({ onUseDemo }: { onUseDemo: () => void }): JSX.Element {
+  const { t } = useI18n();
   const [probe, setProbe] = useState<'loading' | 'reachable' | 'unreachable'>(
     'loading',
   );
@@ -26,20 +28,22 @@ export function LiveUnavailable({ onUseDemo }: { onUseDemo: () => void }): JSX.E
 
   const demoButton = (
     <button type="button" className="vop-m-button" onClick={onUseDemo}>
-      Show sample data
+      {t('m.live.showSample')}
     </button>
   );
 
   if (probe === 'loading') {
     return (
-      <StateMessage title="Loading dashboard data…">Checking the backend.</StateMessage>
+      <StateMessage title={t('m.live.loadingTitle')}>
+        {t('m.live.loadingBody')}
+      </StateMessage>
     );
   }
   if (probe === 'unreachable') {
     return (
       <StateMessage
         tone="error"
-        title="Backend connection unavailable"
+        title={t('m.live.backendDownTitle')}
         action={
           <>
             <button
@@ -47,20 +51,23 @@ export function LiveUnavailable({ onUseDemo }: { onUseDemo: () => void }): JSX.E
               className="vop-m-button vop-m-button--primary"
               onClick={() => setAttempt((n) => n + 1)}
             >
-              Retry
+              {t('common.retry')}
             </button>
             {demoButton}
           </>
         }
       >
-        The dashboard could not reach the server. Check that the backend is running.
+        {t('m.live.backendDownBody')}
       </StateMessage>
     );
   }
   return (
-    <StateMessage tone="warning" title="Dashboard data unavailable" action={demoButton}>
-      The backend is reachable, but it has no merchant order API yet, and staff sign-in
-      is not decided. Live orders will appear here once both exist.
+    <StateMessage
+      tone="warning"
+      title={t('m.live.unavailableTitle')}
+      action={demoButton}
+    >
+      {t('m.live.unavailableBody')}
     </StateMessage>
   );
 }

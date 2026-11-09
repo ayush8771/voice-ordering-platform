@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState, type JSX } from 'react';
+import { I18nProvider } from './i18n/I18nProvider';
 import { CustomerShell } from './pages/CustomerShell';
 import { KitchenShell } from './pages/KitchenShell';
 import { MerchantShell } from './pages/MerchantShell';
@@ -38,7 +39,19 @@ const PaymentStatePreview = import.meta.env.DEV
     )
   : undefined;
 
+/**
+ * One language provider for every surface: the choice persists across reloads
+ * and sets the document language. It holds UI state only.
+ */
 export function App(): JSX.Element {
+  return (
+    <I18nProvider>
+      <Surface />
+    </I18nProvider>
+  );
+}
+
+function Surface(): JSX.Element {
   const [surface, setSurface] = useState(() => readSurface(window.location.hash));
 
   useEffect(() => {

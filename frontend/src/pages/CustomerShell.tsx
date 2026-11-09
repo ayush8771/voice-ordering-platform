@@ -2,6 +2,8 @@ import type { JSX } from 'react';
 import type { Channel } from '@vop/shared';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { CustomerOrdering } from '../customer/CustomerOrdering';
+import { useI18n } from '../i18n/I18nProvider';
+import { LanguageChoice } from '../i18n/LanguagePicker';
 import { readOutletId } from '../customer/useOrdering';
 
 /**
@@ -17,19 +19,20 @@ import { readOutletId } from '../customer/useOrdering';
  * (docs/PROVIDERS.md).
  */
 export function CustomerShell({ channel }: { channel: Channel }): JSX.Element {
+  const { t, rich } = useI18n();
   const outletId = readOutletId(window.location.search, window.location.hash);
 
   if (outletId === undefined) {
     return (
       <main style={{ maxWidth: '480px', margin: '0 auto', padding: 'var(--space-4)' }}>
-        <h1>Which outlet?</h1>
-        <p>
-          This link does not name an outlet, so no menu can be loaded. Scan the QR code
-          on your table, or ask at the counter.
-        </p>
+        <LanguageChoice />
+        <h1>{t('shell.whichOutlet')}</h1>
+        <p>{t('shell.noOutlet')}</p>
         <p style={{ color: 'var(--color-text-muted)' }}>
-          Developer note: open <code>?outlet=demo-outlet</code> (or{' '}
-          <code>#/kiosk?outlet=demo-outlet</code>) against a seeded backend.
+          {rich('shell.devNote', {
+            qr: <code>?outlet=demo-outlet</code>,
+            kiosk: <code>#/kiosk?outlet=demo-outlet</code>,
+          })}
         </p>
         <ConnectionStatus />
       </main>

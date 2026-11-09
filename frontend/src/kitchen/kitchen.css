@@ -122,6 +122,32 @@
   letter-spacing: 0.06em;
 }
 
+/* Language select: a native control, sized like the other header controls. */
+.vop-k-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-muted);
+}
+
+.vop-k-lang select {
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+}
+
+.vop-k-lang select:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .vop-k-toggle {
   display: flex;
   gap: var(--space-1);

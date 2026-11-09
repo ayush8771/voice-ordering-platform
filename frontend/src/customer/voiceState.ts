@@ -1,4 +1,6 @@
+import type { Language } from '@vop/shared';
 import type { SpeechClients } from '../audio/types';
+import { translate } from '../i18n/translate';
 
 /**
  * Display states for the kiosk voice panel. Pure helpers so the wording and
@@ -36,38 +38,21 @@ export interface VoicePhaseCopy {
 export function voicePhaseCopy(
   phase: VoicePhase,
   availability: VoiceAvailability,
+  language: Language = 'en',
 ): VoicePhaseCopy {
-  switch (phase) {
-    case 'ready':
-      return {
-        title: 'Ready to listen',
-        detail: 'Tap the microphone and say what you would like.',
-      };
-    case 'listening':
-      return {
-        title: 'Listening…',
-        detail: 'Speak now. Tap again when you have finished.',
-      };
-    case 'processing':
-      return { title: 'Working on it…', detail: 'Updating your draft order.' };
-    case 'responding':
-      return { title: 'Responding', detail: 'Here is what the assistant said.' };
-    case 'error':
-      return {
-        title: 'Voice did not work',
-        detail: 'Nothing was added. Try again, type below, or use the menu.',
-      };
-    case 'unavailable':
-      return availability.kind === 'assistantDown'
-        ? {
-            title: 'Assistant unavailable',
-            detail:
-              'The assistant cannot help right now. Order with the menu below — it works the same way.',
-          }
-        : {
-            title: 'Voice ordering is not available yet',
-            detail:
-              'Voice will be switched on once the speech service is connected. You can type a request, or order with the menu below.',
-          };
-  }
+  const copy = (
+    state:
+      | 'ready'
+      | 'listening'
+      | 'processing'
+      | 'responding'
+      | 'error'
+      | 'assistantDown'
+      | 'notConnected',
+  ): VoicePhaseCopy => ({
+    title: translate(language, `voice.${state}.title`),
+    detail: translate(language, `voice.${state}.detail`),
+  });
+  if (phase !== 'unavailable') return copy(phase);
+  return copy(availability.kind === 'assistantDown' ? 'assistantDown' : 'notConnected');
 }

@@ -1,6 +1,9 @@
 import { useEffect, useState, type JSX } from 'react';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { readOutletId } from '../customer/useOrdering';
+import { useI18n } from '../i18n/I18nProvider';
+import { LanguageSelect } from '../i18n/LanguagePicker';
+import type { MessageKey } from '../i18n/translate';
 import { DemoBanner, SourceToggle } from './components';
 import { DashboardOverview } from './DashboardOverview';
 import { DEMO_ORDERS } from './demoOrders';
@@ -20,19 +23,20 @@ import './merchant.css';
  * menu page reads the public menu route only.
  */
 
-const PAGES: readonly { id: MerchantPage; label: string; path: string }[] = [
-  { id: 'overview', label: 'Dashboard', path: '#/merchant' },
-  { id: 'orders', label: 'Orders', path: '#/merchant/orders' },
-  { id: 'menu', label: 'Menu', path: '#/merchant/menu' },
+const PAGES: readonly { id: MerchantPage; label: MessageKey; path: string }[] = [
+  { id: 'overview', label: 'm.nav.overview', path: '#/merchant' },
+  { id: 'orders', label: 'm.nav.orders', path: '#/merchant/orders' },
+  { id: 'menu', label: 'm.nav.menu', path: '#/merchant/menu' },
 ];
 
-const TITLES: Record<MerchantPage, string> = {
-  overview: "Today's overview",
-  orders: 'Orders',
-  menu: 'Menu management',
+const TITLES: Record<MerchantPage, MessageKey> = {
+  overview: 'm.title.overview',
+  orders: 'm.title.orders',
+  menu: 'm.title.menu',
 };
 
 export function MerchantDashboard(): JSX.Element {
+  const { t } = useI18n();
   const [hash, setHash] = useState(() => window.location.hash);
   const [source, setSource] = useState<'demo' | 'live'>('demo');
 
@@ -52,12 +56,13 @@ export function MerchantDashboard(): JSX.Element {
     <div className="vop-m">
       <aside className="vop-m-sidebar">
         <div className="vop-m-brand">
-          <p className="vop-m-brand__name">Voice Ordering</p>
+          <p className="vop-m-brand__name">{t('m.brand')}</p>
           <p className="vop-m-brand__outlet">
-            Outlet: {outletId ?? <span className="vop-m-muted">not selected</span>}
+            {t('m.outlet')}{' '}
+            {outletId ?? <span className="vop-m-muted">{t('m.notSelected')}</span>}
           </p>
         </div>
-        <nav aria-label="Merchant">
+        <nav aria-label={t('m.navLabel')}>
           <ul className="vop-m-nav">
             {PAGES.map((p) => (
               <li key={p.id}>
@@ -66,7 +71,7 @@ export function MerchantDashboard(): JSX.Element {
                   href={`${p.path}${query}`}
                   aria-current={page === p.id ? 'page' : undefined}
                 >
-                  {p.label}
+                  {t(p.label)}
                 </a>
               </li>
             ))}
@@ -77,9 +82,9 @@ export function MerchantDashboard(): JSX.Element {
             S
           </span>
           <span>
-            <span className="vop-m-identity__name">Staff member</span>
+            <span className="vop-m-identity__name">{t('m.staff')}</span>
             <span className="vop-m-muted vop-m-identity__note">
-              Sign-in not available yet
+              {t('m.signInUnavailable')}
             </span>
           </span>
         </div>
@@ -87,8 +92,11 @@ export function MerchantDashboard(): JSX.Element {
 
       <main className="vop-m-main">
         <header className="vop-m-header">
-          <h1>{TITLES[page]}</h1>
-          {usesOrders && <SourceToggle source={source} onChange={setSource} />}
+          <h1>{t(TITLES[page])}</h1>
+          <span className="vop-m-header__tools">
+            {usesOrders && <SourceToggle source={source} onChange={setSource} />}
+            <LanguageSelect className="vop-m-lang" />
+          </span>
         </header>
 
         {usesOrders && source === 'demo' && <DemoBanner />}
