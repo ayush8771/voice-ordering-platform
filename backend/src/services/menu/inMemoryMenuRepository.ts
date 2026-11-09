@@ -61,12 +61,16 @@ export const SAMPLE_MENU: MenuDataset = {
     {
       publicId: 'closed-outlet',
       name: 'Closed Demo Outlet',
+      // Every outlet carries a timezone: it is what decides the pickup-token
+      // reset window, and order creation refuses an outlet without one.
+      timezone: 'Asia/Kolkata',
       currency: 'INR',
       active: false,
     },
     {
       publicId: 'other-outlet',
       name: 'Second Demo Outlet',
+      timezone: 'Asia/Kolkata',
       currency: 'INR',
       active: true,
     },

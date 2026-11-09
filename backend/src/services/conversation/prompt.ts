@@ -45,10 +45,17 @@ function describeDraft(draft: DraftSummary | undefined): string {
 export interface PromptContext {
   readonly request: ConversationRequest;
   readonly proactiveRecommendationAllowed: boolean;
+  /**
+   * The item most recently resolved against backend menu data for this
+   * session. Given to the model so a deictic request ("two of those") has a
+   * referent it can turn into an ID, instead of the service having to keep a
+   * per-language list of pronouns.
+   */
+  readonly lastMentionedItem?: { readonly id: string; readonly name: string };
 }
 
 export function buildSystemPrompt(context: PromptContext): string {
-  const { request, proactiveRecommendationAllowed } = context;
+  const { request, proactiveRecommendationAllowed, lastMentionedItem } = context;
   const language = LANGUAGE_LABELS[request.language];
 
   const recommendationRule = proactiveRecommendationAllowed
@@ -63,6 +70,7 @@ export function buildSystemPrompt(context: PromptContext): string {
     '- You cannot create, confirm or cancel an order, take payment, mark anything paid, change prices, or change item availability. Never say or imply that you have done any of these.',
     '- You only ever propose changes to a draft. The customer reviews and confirms the order themselves on screen.',
     '- Never invent menu items, options or prices. Use menu_search or menu_item_details, and only talk about items those tools returned.',
+    '- If the customer asks what they ordered, answer from the draft below and nothing else. Never state a price, a line amount or a total: the screen shows the server-calculated amounts.',
     '- If a request is unclear, ambiguous or not on the menu, ask one short clarifying question instead of guessing.',
     `- ${recommendationRule}`,
     '',
@@ -74,6 +82,11 @@ export function buildSystemPrompt(context: PromptContext): string {
     'Omit or use an empty array for anything you do not need. Put the words the customer should hear in "reply".',
     `Context: phase=${request.phase}; menuVersion=${request.menuVersion ?? 'unknown'}.`,
     describeDraft(request.draftSummary),
+    ...(lastMentionedItem === undefined
+      ? []
+      : [
+          `Most recently discussed item: ${lastMentionedItem.name} (id=${lastMentionedItem.id}). When the customer says "that", "those", "it" or "the same", they mean this item unless the draft makes another reading obvious; use this id as menuItemRef.`,
+        ]),
   ].join('\n');
 }
 

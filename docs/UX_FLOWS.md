@@ -16,17 +16,28 @@ These flows describe the MVP target. Provider-specific voice behavior and final 
 1. Customer browses categories/items or taps microphone and grants permission.
 2. For voice: show listening/processing state, send audio through the Gnani STT adapter, then pass normalized text and session context through the shared conversational service and Sarvam LLM adapter into a draft action.
 3. Show recognized item/quantity/options in the cart; ask a single clarification for ambiguity or offer touch selection.
-4. Customer edits/removes items; client requests server quote.
-5. Server validates active items/options and returns authoritative prices/total.
+4. Customer edits/removes items against the server-side cart, which is the primary ordering interface: every add, quantity change, removal and clear is a server call that returns the whole repriced draft. Voice and touch amend the same draft, so a change made either way is immediately visible in the other.
+5. Server validates active items/options and returns authoritative prices/total. The client displays only those amounts and never computes a total of its own.
 
-**Empty:** Suggest categories and explain voice/touch choices. **Voice denied/fails:** Preserve cart and offer touch input/retry. **Item unavailable:** Explain and remove/replace before checkout. No spoken action submits an order.
+**Empty:** Suggest categories and explain voice/touch choices. **Voice denied/fails:** Preserve cart and offer touch input/retry. No spoken action submits an order.
+
+**Item unavailable (agreed display rule).** A line whose item or option has gone away or been switched off is still returned, marked unavailable, with zero `unitPriceMinor`/`lineTotalMinor` and an issue reason. Zero is **not** a free item. The client must:
+
+- mark the line distinctly from an orderable one - not merely greyed out - and say why in plain language for the reason given (item sold out, item no longer on the menu, that customisation no longer available, cannot be priced);
+- offer remove or replace on the line itself;
+- exclude it from the displayed total, as the server already does;
+- **block checkout** - no quote request and no path to confirmation - while any such line remains, and say that is why, rather than letting the customer reach a failed confirmation.
+
+Announce an item becoming unavailable politely for screen-reader users, as with other cart changes ([DESIGN_SYSTEM.md](DESIGN_SYSTEM.md)).
+
+**Two surfaces editing one draft.** Each cart response carries an integer `revision`. A client sends it back on a mutation that must not apply to a draft it has not seen; if the draft moved in between, the server refuses the change and returns the current revision, and the client re-reads the draft, reapplies the customer's intent and shows the current state rather than overwriting the other surface's edit.
 
 Customers may ask for recommendations at any point in the flow. Proactive recommendations are limited to one per session, are never offered during review, confirmation, or payment, and stop after a decline. All suggested items/options are revalidated against the current backend menu and quoted by the server.
 
 ## Flow 3 - Review, confirm, and choose payment
 
-1. Customer opens final review with item details, options, quantities, and current total.
-2. Customer may edit; server refreshes quote if menu or quote is stale.
+1. Customer opens final review with item details, options, quantities, and current total. Review is reachable only from a draft in which every line is orderable; an unavailable line blocks it until removed or replaced (flow 2).
+2. Customer may edit; the edit goes to the same server-side draft and the server refreshes the quote if the menu or quote is stale. An edit that reveals a newly unavailable line sends the customer back to resolving it rather than to confirmation.
 3. Customer selects UPI QR instructions or cash at counter.
 4. Customer explicitly presses “Confirm order” after seeing the selection and total.
 5. Client submits confirmation with idempotency key; server revalidates and creates one order/token.

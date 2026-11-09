@@ -25,6 +25,12 @@ export interface ConversationSessionState {
   readonly recommendation: RecommendationState;
   /** Bounded replay history: oldest first. */
   readonly history: ChatMessage[];
+  /**
+   * The item most recently resolved against backend menu data for this
+   * session, so a later "add two of those" has a referent. It is a *resolved*
+   * item, never model text, and carries no price.
+   */
+  lastMentioned?: { readonly id: string; readonly name: string };
   lastSeenAt: number;
 }
 

@@ -9,7 +9,7 @@
  * explicit confirmation (docs/SECURITY.md section 2).
  */
 
-import type { Channel, Language } from '@vop/shared';
+import type { Channel, ConversationPhase, Language } from '@vop/shared';
 import type { ProviderErrorCode } from '../../providers/llm/types.js';
 
 /**
@@ -19,14 +19,10 @@ import type { ProviderErrorCode } from '../../providers/llm/types.js';
  * recommendations are forbidden (docs/PRD.md section 5, docs/UX_FLOWS.md
  * flow 2).
  */
-export const CONVERSATION_PHASES = [
-  'browsing',
-  'building',
-  'review',
-  'confirmation',
-  'payment',
-] as const;
-export type ConversationPhase = (typeof CONVERSATION_PHASES)[number];
+// Re-exported from the shared package: QR and kiosk clients send a phase on every
+// turn, so the list is one contract rather than two copies.
+export { CONVERSATION_PHASES } from '@vop/shared';
+export type { ConversationPhase } from '@vop/shared';
 
 /** Phases that suppress every proactive recommendation. */
 export const RECOMMENDATION_FORBIDDEN_PHASES: readonly ConversationPhase[] = [

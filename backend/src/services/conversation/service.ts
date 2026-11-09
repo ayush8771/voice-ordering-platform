@@ -158,6 +158,7 @@ export function createConversationService(
     outletId: string,
     call: ProposeDraftUpdateArgs,
     violations: PolicyViolation[],
+    onResolved: (item: MenuItemSummary) => void,
   ): Promise<DraftAction | undefined> {
     if (call.type === 'clearDraft') return { type: 'clearDraft' };
 
@@ -197,6 +198,7 @@ export function createConversationService(
       optionIds = call.optionRefs;
     }
 
+    onResolved(resolved.item);
     return {
       type: call.type,
       menuItemId: resolved.item.id,
@@ -210,6 +212,7 @@ export function createConversationService(
     outletId: string,
     raw: readonly RawSuggestion[],
     violations: PolicyViolation[],
+    onResolved: (item: MenuItemSummary) => void,
   ): Promise<MenuSuggestion[]> {
     const suggestions: MenuSuggestion[] = [];
 
@@ -227,6 +230,7 @@ export function createConversationService(
         });
         continue;
       }
+      onResolved(resolved.item);
       suggestions.push({
         menuItemId: resolved.item.id,
         name: resolved.item.name,
@@ -239,6 +243,7 @@ export function createConversationService(
   async function executeReadOnlyTool(
     outletId: string,
     call: ValidatedToolCall,
+    onResolved: (item: MenuItemSummary) => void,
   ): Promise<{ readonly payload: unknown; readonly resultCount: number }> {
     if (call.name === 'menu_search') {
       const items = await menu.search(outletId, call.query, call.limit);
@@ -249,6 +254,10 @@ export function createConversationService(
         available: item.available,
         ...(item.priceMinor === undefined ? {} : { priceMinor: item.priceMinor }),
       }));
+      // One hit is an unambiguous referent; several are not, so a later "that"
+      // still has to be disambiguated by the customer.
+      const only = items.length === 1 ? items[0] : undefined;
+      if (only !== undefined) onResolved(only);
       return { payload, resultCount: payload.length };
     }
 
@@ -256,6 +265,7 @@ export function createConversationService(
       call.name === 'menu_item_details'
         ? await menu.getById(outletId, call.menuItemId)
         : undefined;
+    if (item !== undefined) onResolved(item);
 
     return {
       payload:
@@ -289,7 +299,20 @@ export function createConversationService(
     const promptContext = {
       request: { ...request, text },
       proactiveRecommendationAllowed: proactiveAllowed,
+      ...(state.lastMentioned === undefined
+        ? {}
+        : { lastMentionedItem: state.lastMentioned }),
     };
+
+    /**
+     * The last item this turn resolved against backend menu data, which
+     * becomes the referent for the next turn's "those". Tracked here rather
+     * than in `resolveRef` so a failed turn cannot move it.
+     */
+    let mentioned: { readonly id: string; readonly name: string } | undefined;
+    function remember(item: MenuItemSummary): void {
+      mentioned = { id: item.id, name: item.name };
+    }
 
     const violations: PolicyViolation[] = [];
     const toolRequests: ExecutedToolRequest[] = [];
@@ -371,6 +394,7 @@ export function createConversationService(
           const { payload, resultCount } = await executeReadOnlyTool(
             request.outletId,
             call,
+            remember,
           );
           toolResults.push(buildToolResultMessage(call.name, payload));
           toolRequests.push({ name: call.name, accepted: true, resultCount });
@@ -424,7 +448,12 @@ export function createConversationService(
 
     const draftActions: DraftAction[] = [];
     for (const proposal of proposals) {
-      const action = await toDraftAction(request.outletId, proposal, violations);
+      const action = await toDraftAction(
+        request.outletId,
+        proposal,
+        violations,
+        remember,
+      );
       if (action !== undefined) draftActions.push(action);
     }
 
@@ -432,6 +461,7 @@ export function createConversationService(
       request.outletId,
       rawSuggestions,
       violations,
+      remember,
     );
 
     // Policy enforcement on the structured channel: proactive suggestions are
@@ -456,6 +486,9 @@ export function createConversationService(
     if (assistantText !== undefined) {
       store.appendTurn(state, text, assistantText);
     }
+    // Kept from an earlier turn when this one resolved nothing, so a referent
+    // survives a clarifying question.
+    if (mentioned !== undefined) state.lastMentioned = mentioned;
 
     const usage = sawUsage ? { inputTokens, outputTokens, totalTokens } : undefined;
 

@@ -43,16 +43,25 @@ export function requireOrderingSession(
       return;
     }
 
-    const session = sessions.find(sessionId);
-    if (session === undefined) {
-      // Unknown and expired are reported identically, so a caller cannot
-      // distinguish a wrong guess from a timed-out session.
-      next(ApiError.unauthorized('Ordering session is invalid or has expired'));
-      return;
-    }
-
-    req.orderingSession = session;
-    next();
+    // The lookup is a conditional write against the session store, so it is
+    // awaited here rather than in each route. A store failure reaches the
+    // error handler as the retryable 503 the store raised; it is never
+    // mistaken for an invalid session.
+    sessions.find(sessionId).then(
+      (session) => {
+        if (session === undefined) {
+          // Unknown and expired are reported identically, so a caller cannot
+          // distinguish a wrong guess from a timed-out session.
+          next(ApiError.unauthorized('Ordering session is invalid or has expired'));
+          return;
+        }
+        req.orderingSession = session;
+        next();
+      },
+      (error: unknown) => {
+        next(error);
+      },
+    );
   };
 }
 

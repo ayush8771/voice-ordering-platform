@@ -20,9 +20,9 @@ import {
   type QuoteResponse,
 } from '@vop/shared';
 import { ApiError } from '../../middleware/errors.js';
-import type { MenuItemDoc } from '../../models/menu.js';
-import { addMinor, assertMinorUnits, multiplyMinor } from '../../models/money.js';
+import { addMinor, multiplyMinor } from '../../models/money.js';
 import type { MenuService, MenuSnapshot } from '../menu/menuService.js';
+import { assertSelection } from './pricing.js';
 import type { QuoteStore } from './quoteStore.js';
 
 /** The authenticated session a quote is issued to. */
@@ -52,44 +52,6 @@ export interface QuoteServiceDeps {
 
 /** How long a quote may be presented before it must be refreshed. */
 export const QUOTE_TTL_MS = 5 * 60 * 1000;
-
-/** Prices one unit: item price plus every selected option delta. */
-function priceLine(
-  item: MenuItemDoc,
-  optionIds: readonly string[],
-): { readonly unitPriceMinor: number; readonly optionIds: readonly string[] } {
-  const options = item.options ?? [];
-  let unitPriceMinor = assertMinorUnits(
-    item.priceMinor,
-    `menuItem ${item.publicId} priceMinor`,
-  );
-
-  for (const optionId of optionIds) {
-    const option = options.find((candidate) => candidate.publicId === optionId);
-    if (option === undefined) {
-      throw ApiError.unprocessable('Selected option does not exist for this item', [
-        { menuItemId: item.publicId, optionId },
-      ]);
-    }
-    if (!option.active) {
-      throw ApiError.conflict('Selected option is unavailable', [
-        { menuItemId: item.publicId, optionId },
-      ]);
-    }
-
-    // A delta may be negative, so the running total is checked rather than
-    // assumed: a misconfigured discount must not produce a negative price.
-    const next = unitPriceMinor + option.priceDeltaMinor;
-    if (!Number.isSafeInteger(next) || next < 0) {
-      throw ApiError.conflict('This combination cannot be priced', [
-        { menuItemId: item.publicId, optionId },
-      ]);
-    }
-    unitPriceMinor = next;
-  }
-
-  return { unitPriceMinor, optionIds };
-}
 
 /** Validates the request body shape before any menu work. */
 function validateRequest(request: unknown): QuoteRequest {
@@ -166,19 +128,12 @@ function buildLine(
     optionIds: readonly string[];
   },
 ): QuoteLine {
-  const item = snapshot.itemsById.get(requested.menuItemId);
-  if (item === undefined) {
-    throw ApiError.unprocessable('Selected item is not on this menu', [
-      { menuItemId: requested.menuItemId },
-    ]);
-  }
-  if (!item.active) {
-    throw ApiError.conflict('Selected item is unavailable', [
-      { menuItemId: requested.menuItemId },
-    ]);
-  }
-
-  const { unitPriceMinor } = priceLine(item, requested.optionIds);
+  // Validation and pricing both live in the shared pricing module, so a cart
+  // draft and a quote cannot disagree about a selection.
+  const { item, unitPriceMinor } = assertSelection(snapshot, {
+    menuItemId: requested.menuItemId,
+    optionIds: requested.optionIds,
+  });
 
   return {
     menuItemId: item.publicId,

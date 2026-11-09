@@ -16,6 +16,7 @@ import {
 import { createMenuService } from '../services/menu/menuService.js';
 import { createQuoteService } from '../services/quote/quoteService.js';
 import { createQuoteStore } from '../services/quote/quoteStore.js';
+import { createCartStore } from '../services/cart/cartStore.js';
 import { createOrderingSessionService } from '../services/sessions/orderingSessionService.js';
 
 function app() {
@@ -25,11 +26,15 @@ function app() {
     menuService,
     quoteStore: createQuoteStore(),
   });
+  // In-memory, so a session-end test can assert the draft was cleared without
+  // a database.
+  const cartStore = createCartStore();
 
   return createApp(loadConfig({ NODE_ENV: 'test' }), {
     menuService,
     quoteService,
     orderingSessions,
+    cartStore,
   });
 }
 
@@ -111,6 +116,83 @@ describe('POST /api/v1/ordering-sessions', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('DELETE /api/v1/ordering-sessions', () => {
+  it('revokes the session: it can no longer read its own cart', async () => {
+    const server = app();
+    const token = await session(server);
+
+    const ended = await request(server)
+      .delete('/api/v1/ordering-sessions')
+      .set('Authorization', `Bearer ${token}`);
+    expect(ended.status).toBe(204);
+    expect(ended.body).toEqual({});
+
+    const after = await request(server)
+      .get('/api/v1/cart')
+      .set('Authorization', `Bearer ${token}`);
+    expect(after.status).toBe(401);
+  });
+
+  it('clears the draft along with the session', async () => {
+    const server = app();
+    const token = await session(server);
+
+    await request(server)
+      .post('/api/v1/cart/items')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ menuItemId: 'item-idli', quantity: 1 });
+
+    await request(server)
+      .delete('/api/v1/ordering-sessions')
+      .set('Authorization', `Bearer ${token}`);
+
+    // A fresh session for the same outlet gets an empty draft, not the one
+    // just deleted - draft identity is per session, never reused.
+    const freshToken = await session(server);
+    const cart = await request(server)
+      .get('/api/v1/cart')
+      .set('Authorization', `Bearer ${freshToken}`);
+    expect(cart.body.items).toEqual([]);
+  });
+
+  it('is idempotent: ending an unknown or already-ended session still succeeds', async () => {
+    const server = app();
+    const token = await session(server);
+
+    expect(
+      (
+        await request(server)
+          .delete('/api/v1/ordering-sessions')
+          .set('Authorization', `Bearer ${token}`)
+      ).status,
+    ).toBe(204);
+
+    // Same token again - already ended.
+    expect(
+      (
+        await request(server)
+          .delete('/api/v1/ordering-sessions')
+          .set('Authorization', `Bearer ${token}`)
+      ).status,
+    ).toBe(204);
+
+    // Never issued at all.
+    expect(
+      (
+        await request(server)
+          .delete('/api/v1/ordering-sessions')
+          .set('Authorization', 'Bearer not-a-real-session')
+      ).status,
+    ).toBe(204);
+  });
+
+  it('requires a bearer token', async () => {
+    const response = await request(app()).delete('/api/v1/ordering-sessions');
+
+    expect(response.status).toBe(401);
   });
 });
 

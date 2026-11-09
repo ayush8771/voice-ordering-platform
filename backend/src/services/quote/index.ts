@@ -1,6 +1,15 @@
 /** Public surface of the quote service. */
 
 export {
+  assertSelection,
+  evaluateSelection,
+  selectionError,
+  type Selection,
+  type SelectionEvaluation,
+  type SelectionIssue,
+  type SelectionIssueReason,
+} from './pricing.js';
+export {
   createQuoteService,
   QUOTE_TTL_MS,
   type QuoteService,

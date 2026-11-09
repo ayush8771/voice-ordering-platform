@@ -67,29 +67,29 @@ const DRAFT = {
 } as const;
 
 describe('session token entropy', () => {
-  it('issues 256 bits of CSPRNG output in a URL-safe encoding', () => {
+  it('issues 256 bits of CSPRNG output in a URL-safe encoding', async () => {
     const sessions = createOrderingSessionService();
-    const { sessionId } = sessions.create('demo-outlet', 'qr');
+    const { sessionId } = await sessions.create('demo-outlet', 'qr');
 
     // 32 bytes base64url, unpadded.
     expect(sessionId).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(Buffer.from(sessionId, 'base64url')).toHaveLength(32);
   });
 
-  it('never repeats a token', () => {
+  it('never repeats a token', async () => {
     const sessions = createOrderingSessionService();
     const issued = new Set<string>();
 
     for (let index = 0; index < 2000; index += 1) {
-      issued.add(sessions.create('demo-outlet', 'qr').sessionId);
+      issued.add((await sessions.create('demo-outlet', 'qr')).sessionId);
     }
 
     expect(issued.size).toBe(2000);
   });
 
-  it('derives a log reference that does not reveal the token', () => {
+  it('derives a log reference that does not reveal the token', async () => {
     const sessions = createOrderingSessionService();
-    const { sessionId } = sessions.create('demo-outlet', 'qr');
+    const { sessionId } = await sessions.create('demo-outlet', 'qr');
     const ref = deriveSessionRef(sessionId);
 
     expect(ref).toMatch(/^[0-9a-f]{12}$/);
@@ -197,47 +197,47 @@ describe('outlet isolation', () => {
 });
 
 describe('session expiry', () => {
-  it('stops working at the absolute deadline however active the customer was', () => {
+  it('stops working at the absolute deadline however active the customer was', async () => {
     let clock = 1_000_000;
     const sessions = createOrderingSessionService({ now: () => clock });
-    const { sessionId } = sessions.create('demo-outlet', 'kiosk');
+    const { sessionId } = await sessions.create('demo-outlet', 'kiosk');
 
     // Busy throughout: a request every minute keeps sliding the idle window.
     for (let minute = 1; minute < 30; minute += 1) {
       clock = 1_000_000 + minute * 60_000;
-      expect(sessions.find(sessionId), `minute ${minute}`).toBeDefined();
+      expect(await sessions.find(sessionId), `minute ${minute}`).toBeDefined();
     }
 
     clock = 1_000_000 + SESSION_TTL_MS;
-    expect(sessions.find(sessionId)).toBeUndefined();
+    expect(await sessions.find(sessionId)).toBeUndefined();
   });
 
-  it('stops working after the idle window, well before the absolute deadline', () => {
+  it('stops working after the idle window, well before the absolute deadline', async () => {
     let clock = 1_000_000;
     const sessions = createOrderingSessionService({ now: () => clock });
-    const { sessionId } = sessions.create('demo-outlet', 'kiosk');
+    const { sessionId } = await sessions.create('demo-outlet', 'kiosk');
 
     // A kiosk walk-away: used once, then abandoned.
     clock += 60_000;
-    expect(sessions.find(sessionId)).toBeDefined();
+    expect(await sessions.find(sessionId)).toBeDefined();
 
     clock += SESSION_IDLE_TTL_MS;
-    expect(sessions.find(sessionId)).toBeUndefined();
+    expect(await sessions.find(sessionId)).toBeUndefined();
     // And it died long before the absolute cap would have ended it.
     expect(SESSION_IDLE_TTL_MS + 60_000).toBeLessThan(SESSION_TTL_MS);
   });
 
-  it('slides the idle window on each use but never past the absolute deadline', () => {
+  it('slides the idle window on each use but never past the absolute deadline', async () => {
     const start = 1_000_000;
     let clock = start;
     const sessions = createOrderingSessionService({ now: () => clock });
-    const { sessionId } = sessions.create('demo-outlet', 'qr');
+    const { sessionId } = await sessions.create('demo-outlet', 'qr');
 
     // Each use just inside the idle window pushes the deadline forward.
-    let previous = sessions.find(sessionId)?.idleExpiresAtMs ?? 0;
+    let previous = (await sessions.find(sessionId))?.idleExpiresAtMs ?? 0;
     while (clock + SESSION_IDLE_TTL_MS - 1_000 < start + SESSION_TTL_MS) {
       clock += SESSION_IDLE_TTL_MS - 1_000;
-      const refreshed = sessions.find(sessionId);
+      const refreshed = await sessions.find(sessionId);
       expect(refreshed, `at ${clock - start}ms`).toBeDefined();
       expect(refreshed!.idleExpiresAtMs).toBeGreaterThan(previous);
       expect(refreshed!.idleExpiresAtMs).toBeLessThanOrEqual(refreshed!.expiresAtMs);
@@ -247,22 +247,22 @@ describe('session expiry', () => {
 
     // Within one idle window of the cap, the idle deadline is clamped to it.
     clock = start + SESSION_TTL_MS - 1_000;
-    const late = sessions.find(sessionId);
+    const late = await sessions.find(sessionId);
     expect(late?.idleExpiresAtMs).toBe(start + SESSION_TTL_MS);
 
     // So activity cannot extend the session past the cap.
     clock = start + SESSION_TTL_MS;
-    expect(sessions.find(sessionId)).toBeUndefined();
+    expect(await sessions.find(sessionId)).toBeUndefined();
   });
 
-  it('drops an expired session from the store rather than holding it', () => {
+  it('drops an expired session from the store rather than holding it', async () => {
     let clock = 1_000_000;
     const sessions = createOrderingSessionService({ now: () => clock });
-    sessions.create('demo-outlet', 'qr');
-    expect(sessions.size()).toBe(1);
+    await sessions.create('demo-outlet', 'qr');
+    expect(await sessions.size()).toBe(1);
 
     clock += SESSION_IDLE_TTL_MS;
-    expect(sessions.size()).toBe(0);
+    expect(await sessions.size()).toBe(0);
   });
 
   it('reports an expired token exactly like an unknown one over HTTP', async () => {

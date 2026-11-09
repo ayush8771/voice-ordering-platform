@@ -5,8 +5,9 @@
  * contract both owners depend on, so additions are reviewed by Ayush and Anvesh
  * before either side implements against them.
  *
- * Menu, ordering-session and quote shapes are now here (menu + touch ordering
- * milestone). Order creation and payment shapes are deliberately still absent.
+ * Menu, ordering-session, quote, cart, order and conversational-turn shapes are
+ * all here now. Payment-provider shapes are deliberately still absent: no
+ * provider is selected.
  *
  * Three additions need Ayush/Anvesh sign-off because docs/API.md does not
  * describe them: menu categories, the `Authorization: Bearer <sessionId>`
@@ -247,4 +248,238 @@ export interface QuoteResponse {
   readonly totalMinor: number;
   readonly currency: 'INR';
   readonly expiresAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Cart draft contracts (`/api/v1/cart`)
+// ---------------------------------------------------------------------------
+
+/**
+ * NEEDS JOINT AGREEMENT: docs/API.md describes no cart endpoints - it assumes
+ * the client holds the draft and sends it to `POST /api/v1/quotes`. A
+ * server-side draft is added because one shared conversational layer must be
+ * able to amend the same draft the touch UI shows (docs/ARCHITECTURE.md
+ * section 3): a client-only draft cannot be read by a backend conversation
+ * tool. The quote contract is unchanged, so a client may ignore the cart
+ * entirely and keep posting its own draft to `/quotes`.
+ *
+ * A cart is a draft and nothing more. It creates no order, reserves nothing,
+ * holds no payment state, and is never evidence that a customer confirmed
+ * anything (docs/SECURITY.md section 2).
+ */
+
+/** Bounds enforced on every cart mutation. */
+export const MAX_CART_LINES = 30;
+export const MAX_CART_LINE_QUANTITY = 20;
+
+/** Why a line that is already in the draft can no longer be ordered. */
+export const CART_LINE_ISSUES = [
+  /** The item has left the menu entirely. */
+  'itemNotOnMenu',
+  /** The item exists but the merchant has switched it off. */
+  'itemUnavailable',
+  /** A selected option has left the item. */
+  'optionNotOnItem',
+  /** A selected option exists but is switched off. */
+  'optionUnavailable',
+  /** Current prices cannot produce a valid amount for this line. */
+  'notPriceable',
+] as const;
+export type CartLineIssue = (typeof CART_LINE_ISSUES)[number];
+
+/** One draft line. Every money field is server-calculated. */
+export interface CartLine {
+  /** Stable handle for updating or removing this line. Opaque to the client. */
+  readonly lineId: string;
+  readonly menuItemId: string;
+  /** Snapshotted from the menu, never echoed from the client. */
+  readonly name: string;
+  readonly quantity: number;
+  readonly optionIds: readonly string[];
+  /**
+   * Zero when `issues` is non-empty: no stale price is ever reported, and an
+   * unorderable line contributes nothing to the totals.
+   */
+  readonly unitPriceMinor: number;
+  readonly lineTotalMinor: number;
+  /** False when `issues` is non-empty. */
+  readonly available: boolean;
+  readonly issues: readonly CartLineIssue[];
+}
+
+export interface CartResponse {
+  readonly cartId: string;
+  readonly outletId: string;
+  /** Menu the prices below were taken from, recomputed on every response. */
+  readonly menuVersion: string;
+  /**
+   * Monotonic counter, incremented by every accepted mutation. Send it back in
+   * `If-Match` to make a mutation conditional.
+   */
+  readonly revision: number;
+  /** Insertion order. Identical item+option selections are merged into one line. */
+  readonly items: readonly CartLine[];
+  /** Sum of available lines only. */
+  readonly subtotalMinor: number;
+  /**
+   * Equal to `subtotalMinor`, for the same reason as on a quote: no charge rule
+   * is configured (docs/PRD.md section 9).
+   */
+  readonly totalMinor: number;
+  readonly currency: 'INR';
+  /** True when at least one line carries an issue. Blocks checkout, not editing. */
+  readonly hasUnavailableItems: boolean;
+  readonly updatedAt: string;
+}
+
+export interface AddCartItemRequest {
+  readonly menuItemId: string;
+  readonly quantity: number;
+  readonly optionIds?: readonly string[];
+}
+
+/** Quantity is required; `optionIds`, when present, replaces the selection. */
+export interface UpdateCartItemRequest {
+  readonly quantity: number;
+  readonly optionIds?: readonly string[];
+}
+
+// ---------------------------------------------------------------------------
+// Order contracts (`POST /api/v1/orders`, `GET /api/v1/orders/{orderId}`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Explicit customer confirmation is a required field, not an inference: a
+ * draft, a quote, or a transcript is never evidence that a customer confirmed
+ * (docs/SECURITY.md section 2). `customerConfirmed` must be literally `true`.
+ *
+ * `quoteId` is what fixes the priced selection. The server re-validates the
+ * quote against the live menu anyway, so a quote is a record of what the
+ * customer saw rather than a trusted price.
+ */
+export interface CreateOrderRequest {
+  readonly outletId: string;
+  readonly quoteId: string;
+  readonly paymentMethod: PaymentMethod;
+  readonly customerConfirmed: true;
+}
+
+/** Bound on the `Idempotency-Key` header value. */
+export const MAX_IDEMPOTENCY_KEY_CHARS = 128;
+
+/** One immutable ordered line. Prices are the ones calculated at order time. */
+export interface OrderItem {
+  readonly menuItemId: string;
+  /** Item name as it stood when the order was accepted. */
+  readonly nameAtOrder: string;
+  readonly quantity: number;
+  readonly optionIds: readonly string[];
+  readonly unitPriceMinor: number;
+  readonly lineTotalMinor: number;
+}
+
+/**
+ * The customer-visible order.
+ *
+ * `token` is the pickup token: per outlet, per outlet-local day, sequential
+ * from 1, and never reused within that day. It is deliberately not an
+ * identifier - `orderId` is - because a token is called out loud at a counter.
+ */
+export interface OrderResponse {
+  readonly orderId: string;
+  readonly token: string;
+  readonly outletId: string;
+  readonly channel: Channel;
+  readonly orderStatus: OrderStatus;
+  readonly paymentMethod: PaymentMethod;
+  /**
+   * `'dueAtCounter'` for cash, `'pending'` for UPI. Never `'verified'` here:
+   * only a verified provider callback or an authorized staff action may reach
+   * that, and neither exists yet (docs/SECURITY.md section 2).
+   */
+  readonly paymentStatus: PaymentStatus;
+  readonly items: readonly OrderItem[];
+  readonly subtotalMinor: number;
+  readonly totalMinor: number;
+  readonly currency: 'INR';
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/**
+ * NEEDS JOINT AGREEMENT: `orderAccessToken` is not in docs/API.md.
+ *
+ * An ordering session expires 30 minutes after it is created, while a customer
+ * may still be waiting for food. docs/API.md scopes `GET /api/v1/orders/{id}`
+ * to the session, which would make an order unreadable exactly when the
+ * customer wants to track it. So order creation issues a separate unguessable
+ * read capability, stored only as a hash, which keeps working after the
+ * session has gone.
+ *
+ * It is returned exactly once, on the first successful creation. An idempotent
+ * replay cannot reissue it, because only its hash is stored, and so omits it.
+ */
+export interface CreateOrderResponse extends OrderResponse {
+  readonly orderAccessToken?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Conversational turn contracts (`POST /api/v1/conversation/turns`)
+// ---------------------------------------------------------------------------
+
+/**
+ * NEEDS JOINT AGREEMENT: docs/API.md describes the conversational service as an
+ * internal contract with no HTTP route, but a QR or kiosk client cannot reach
+ * it any other way - clients never call an LLM directly. The route exists in
+ * `backend/src/routes/conversation.ts`; these are the client-visible shapes.
+ *
+ * Nothing here is authoritative. A draft action is a proposal that the backend
+ * has already validated and applied (or refused) against the server-side
+ * draft, and `cart` is the only truth about what is in the draft. Speech never
+ * confirms an order (docs/SECURITY.md section 2).
+ */
+export const CONVERSATION_PHASES = [
+  'browsing',
+  'building',
+  'review',
+  'confirmation',
+  'payment',
+] as const;
+export type ConversationPhase = (typeof CONVERSATION_PHASES)[number];
+
+export interface ConversationTurnRequest {
+  readonly language: Language;
+  readonly phase: ConversationPhase;
+  /** Transcript or typed text. Untrusted server-side. */
+  readonly text: string;
+  /** Set once the customer has declined a suggestion. */
+  readonly customerDeclinedRecommendation?: boolean;
+}
+
+/** A menu item the assistant offered, already resolved against the live menu. */
+export interface ConversationSuggestion {
+  readonly menuItemId: string;
+  readonly name: string;
+  readonly kind: 'requested' | 'proactive';
+}
+
+/**
+ * Client-visible subset of the backend's turn result. The backend type
+ * (`workflows/conversationTurn.ts`) is the authority and carries audit fields
+ * a client has no use for; a compile-time check in the route keeps this
+ * assignable from it, so the two cannot drift apart silently.
+ */
+export interface ConversationTurnResponse {
+  /** Absent when the provider failed; the draft is then untouched. */
+  readonly assistantText: string | undefined;
+  /** The authoritative draft after the turn. */
+  readonly cart: CartResponse;
+  readonly suggestions: readonly ConversationSuggestion[];
+  /** True when the assistant needs the customer to disambiguate. */
+  readonly needsClarification: boolean;
+  readonly providerStatus: {
+    readonly state: 'ok' | 'failed';
+    /** `'touch'` whenever the conversational path produced nothing usable. */
+    readonly fallback?: 'touch';
+  };
 }

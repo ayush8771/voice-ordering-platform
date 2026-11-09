@@ -14,6 +14,7 @@ import { connectToMongo, disconnectFromMongo, getDb } from './mongo.js';
 import { COLLECTIONS } from '../models/menu.js';
 import { ensureMenuIndexes } from '../services/menu/mongoMenuRepository.js';
 import { SAMPLE_MENU } from '../services/menu/inMemoryMenuRepository.js';
+import { assertOutletTimezone } from '../services/orders/pickupToken.js';
 
 async function main(): Promise<void> {
   loadEnvFile();
@@ -33,6 +34,9 @@ async function main(): Promise<void> {
   const now = new Date();
 
   for (const outlet of SAMPLE_MENU.outlets) {
+    // Verified before writing: an outlet without a usable timezone cannot
+    // allocate pickup tokens, and seeding one would only surface at order time.
+    assertOutletTimezone(outlet);
     await db
       .collection(COLLECTIONS.outlets)
       .updateOne(

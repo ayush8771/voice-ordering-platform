@@ -36,13 +36,41 @@ flowchart LR
 - **Speech adapters:** normalize Gnani Prisma STT/Timbre TTS requests/results; fail safely; never make provider output authoritative for prices, payment, or final confirmation.
 - **Recommendation policy:** answer customer-requested recommendations whenever asked. Allow at most one unsolicited recommendation per ordering session; never during review, confirmation, or payment; after a decline, do not proactively recommend again in that session.
 - **Tool execution:** model proposals are limited to an explicit allowlist and revalidated by backend domain services. The LLM cannot create orders, confirm them, verify payment, or bypass quote and confirmation steps.
+
+**As implemented - how a proposal reaches the draft.** The conversational
+service and the cart service do not depend on each other: one produces
+proposals and owns no ordering authority, the other owns every draft rule. The
+wiring is `workflows/conversationTurn.ts`, an application-level workflow above
+both, like `endOrderingSession.ts` and `confirmOrder.ts`. It reads the draft
+through the cart service, hands the model a price-free summary of it, and
+applies each validated draft action by calling the ordinary cart service
+methods - the same path the HTTP cart routes take, so a spoken change and a tap
+are validated identically. The workflow is injected with those two services and
+nothing else, so there is no dependency through which model output could reach a
+store, a quote, an order or payment state; that is the structural form of the
+"the LLM cannot create orders" rule above, not just a prompt instruction. Its
+one HTTP entry point is `POST /api/v1/conversation/turns`
+([API.md](API.md)). A provider failure, or no provider configured at all,
+leaves the cart endpoints untouched.
+
+**As implemented - quoting the draft itself.** The same shape of gap existed
+between the cart and quote services: `POST /api/v1/quotes` prices whatever
+`items` array a caller sends, with nothing tying it to the session's actual
+draft. `workflows/quoteFromCart.ts` closes it the same way - an
+application-level function depending on the cart service and the quote
+service and nothing else - by reading the draft and quoting exactly those
+lines through the ordinary `quoteService.createQuote`, the same pricing and
+validation path a hand-built quote request takes. Its one HTTP entry point is
+`POST /api/v1/cart/quote` ([API.md](API.md)); it only reads the draft, never
+writes it, and refuses outright - naming every bad line - while the draft
+holds anything that cannot currently be ordered.
 - **Persistence:** MongoDB repositories/indexes and controlled schema evolution.
 
 ## 4. Data and request flow
 
 1. Client obtains an outlet-scoped ordering session using a QR/kiosk entry point.
-2. Client fetches active menu and submits selected item IDs/options/quantities or a speech-derived intent.
-3. API validates session scope and menu state, then returns a server-calculated quote.
+2. Client fetches active menu and submits selected item IDs/options/quantities or a speech-derived intent, amending the server-side draft cart (the primary ordering interface) or, for a client holding its own draft, sending the selection straight to a quote.
+3. API validates session scope and menu state, then returns the repriced draft and, at review, a server-calculated quote. A draft line whose item or option has gone away is returned with zero amounts and an issue code; the client must resolve it before checkout.
 4. UI presents a review; customer explicitly confirms the quoted contents.
 5. API validates current menu/prices again, applies idempotency, writes order and token, and returns the accepted order.
 6. Payment remains pending/due until verified provider callback or authorized staff action.
@@ -77,6 +105,7 @@ backend/src/providers/sarvam    Sarvam LLM adapter (see PROVIDERS.md)
 backend/src/services/conversation  shared conversational service
 backend/src/services/menu          menu authority, repository, lookup port impl
 backend/src/services/quote         server-authoritative pricing
+backend/src/services/cart          per-session draft cart
 backend/src/services/sessions      anonymous ordering sessions
 frontend/src/{api,components,pages,styles}
 shared/src                      contracts depended on by both sides
@@ -99,12 +128,50 @@ The conversation service reaches menu data through a narrow read-only port
 the model's search results and the customer's prices come from one authority.
 The port has no write method, so no allowlisted tool can change menu state.
 
+The draft cart (`services/cart`) is the **primary customer ordering interface**
+(agreed; see [API.md](API.md)). Both QR and kiosk build the order against it,
+because the shared conversational layer has to amend the same draft the touch UI
+shows and a browser-only draft is invisible to a backend conversation tool. The
+quote service is retained unchanged alongside it, for a client that holds its
+own draft and for independent quote requests, so neither path is deprecated.
+
+It stores selections only - item ID, option IDs and quantity - and reprices them
+from the menu on every read, so a price can never go stale in storage. It shares
+`services/quote/pricing.ts` with the quote service, which is the single place a
+selection becomes a price; a draft total and a quote for the same selection
+therefore cannot diverge. Identical selections merge into one draft line, while
+a quote deliberately does not merge, because there the client owns the line list.
+
+The draft is keyed by ordering session, mutations for one session are serialized,
+and the integer `revision` gives clients optimistic concurrency, which is what
+makes a voice turn and a touch tap safe to land at the same moment. A draft
+remains a draft: order creation re-validates through a quote.
+
+**As implemented:** drafts and ordering sessions are persisted in MongoDB, so a
+restart or a second backend instance does not end a session or empty a draft
+mid-order. Both are keyed by the SHA-256 hash of the session ID, so no bearer
+token is stored; session and outlet scoping and both expiry deadlines are
+enforced in the query filter, with TTL indexes for cleanup only. The revision
+check is a conditional write, because the in-process lock cannot serialize two
+instances - it now only keeps one process's own mutations from interleaving. A
+mutation that carried no expected revision retries against the fresh draft; one
+that carried a stale revision is still `409`. A draft's deadline is clamped to
+`min(now + 30 minutes, session.expiresAt)` on every write, and ending a session
+deletes its draft through `workflows/endOrderingSession.ts` - a workflow above
+both services, so neither depends on the other. An unreachable store is a
+retryable `503` and never a draft reported as saved. Details are in
+[DATABASE.md](DATABASE.md) section 2; the response contract is unchanged.
+
 Menu persistence sits behind `MenuRepository`: a MongoDB implementation in
 production and an in-memory one for tests, which keeps pricing and validation
 rules testable without a database. The database is resolved per request, so an
 unreachable database becomes a retryable `503` rather than a crash.
-Conversation state (recommendation policy, bounded reply history) is in-memory
-and per session; persistence and retention remain open decisions.
+Conversation state (recommendation policy, bounded reply history, and the last
+menu item resolved for the session, which is what gives "two of those" a
+referent) is in-memory and per session; persistence and retention remain open
+decisions. Because it is keyed by session ID and bound to the session's outlet,
+it is isolated like every other per-session resource, and it holds no money and
+no model text - only items resolved from backend menu data.
 
 ## 8. Key decisions and unresolved items
 

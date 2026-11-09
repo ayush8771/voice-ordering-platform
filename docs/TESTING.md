@@ -34,6 +34,19 @@ Run kiosk and QR order through review, explicit confirmation, payment choice, to
 11. Requested recommendations are available on request; unsolicited recommendations occur no more than once per session and never during review, confirmation, or payment; a decline suppresses further proactive recommendations for that session.
 12. Provider output cannot set price, mark payment verified, confirm an order, or bypass backend quote validation and explicit confirmation.
 
+**Covered as of the order milestone** (`routes/orders.integration.test.ts` over a real `mongod`, `services/orders/pickupToken.test.ts` as unit tests):
+
+- items 2, 3 and 4 for order creation: the order is re-priced from the live menu and a moved `menuVersion`, a changed price or a switched-off item is `409` with no order written; a request without a literal `customerConfirmed: true` (including a truthy `"yes"`) is `400` and writes nothing;
+- item 5, including the cases a single-process test would miss: five concurrent retries of one `Idempotency-Key` create exactly one order (one `201`, the rest `200` with the same `orderId`), a reused key with a different payload is `409`, and a replay still succeeds after the quote has gone - checked by replaying against a **fresh app instance**, which is what a restart or a second backend instance is;
+- item 1 for orders: another session's quote is `409`, an out-of-scope `outletId` is `403`, and a wrong order-read capability, a session token used in its place and an unknown order ID are all `404`;
+- item 6 in part: a cash order is `dueAtCounter` and a UPI order `pending`; no request path can reach `verified`;
+- pickup tokens: four concurrent orders take `1`-`4` with no repeat, counters are separate per outlet and per outlet-local day, and the outlet's timezone (not UTC) decides the day;
+- storage hygiene: the stored order document contains neither the session bearer token nor the raw order-read capability, only their hashes.
+
+Items 7, 8 and 10 remain uncovered because the payment callback and the staff/merchant routes are not implemented (no payment provider is selected and staff authentication is undecided).
+
+**Covered as of the integration-readiness milestone** (`routes/customerJourney.integration.test.ts`, over a real `mongod` with the production wiring): item 9 end to end, not just at the conversation-service boundary - a voice turn and a touch edit land on the same persisted draft, the draft quotes and confirms into an order, the order outlives an explicit session revocation, and the same journey completes through touch alone when no conversational provider is configured; item 5 and item 3's restart form again, this time through the whole chain rather than orders in isolation - a draft built against one app instance is read, quoted, and confirmed into an order tracked from a second instance against the same database, which is what a restart or a second backend instance is. `workflows/quoteFromCart.test.ts` and `routes/cart.test.ts` cover item 2 for the cart-to-quote path specifically: a quote taken from the stored draft cannot diverge from what the cart itself reports, and a draft holding an unavailable line is refused outright rather than quoted with that line dropped. `routes/ordering.test.ts` covers the session-revocation route added this milestone: ending a session clears its draft and makes the capability unusable immediately, and ending an unknown or already-ended session is idempotent.
+
 ## 4. Tools, commands, coverage
 
 **Unit/integration tools:** Vitest (configured in `backend/` and `shared/`), with Supertest for HTTP-level API tests and `mongodb-memory-server` for the MongoDB integration tests described in section 2. **E2E tooling:** still undecided; no browser-driver dependency has been added.
@@ -60,7 +73,25 @@ resolution; behavioural parity between the MongoDB and in-memory repositories
 over both the sample menu and a multilingual dataset whose names collate
 differently byte-wise and locale-wise; `menuVersion` stability across reads,
 change on every price, availability, option-delta and category-name edit, and
-isolation from another outlet's edits. Seed and HTTP: `npm run seed` writes the
+isolation from another outlet's edits. For persisted ordering sessions and
+draft carts: restart recovery (a second store over the same database serves a
+session and a draft the first created), that no bearer token is written to disk
+and a stored line carries no money field, session and outlet isolation in the
+filter, expiry refused on read while the document is still present, the idle
+slide clamped to the absolute deadline, revision conflicts between two
+instances with no lost line and a stale `If-Match` still `409`, the full-store
+refusal, and an absent database surfacing as a retryable `503` on every
+operation rather than as an invalid session or a saved draft, and the draft
+deadline clamped to the session's. Over HTTP against a real `mongod` with the
+production wiring and no injected doubles
+(`routes/cartHttp.integration.test.ts`): session creation persisting a
+token-free document and refusing an unknown outlet, the full cart verb walk
+with `If-Match` accepted and a stale one refused, selection-only storage, one
+session's draft invisible to another, restart recovery of both the session and
+its draft by a second app instance, and an expired session refusing every cart
+verb with the same body an unknown token gets while its draft document is still
+present. The teardown workflow is unit-tested for delete order, retries, and a
+session still ended when the draft delete keeps failing. Seed and HTTP: `npm run seed` writes the
 expected rows, timestamps and indexes, is idempotent across runs (including
 preserving `createdAt`), and refuses to run with `NODE_ENV=production` or
 without `MONGODB_URI`; the menu endpoint then serves the seeded data over a real
@@ -95,16 +126,30 @@ refusal, menu-reference resolution including unknown/unavailable/ambiguous,
 option validation, recommendation policy across phases/decline/one-per-session,
 session isolation and outlet-scope refusal, bounded history, tool-round limits,
 unstructured replies, provider-failure fallback, request validation and
-redacted logging), plus environment/config validation, the health contract,
+redacted logging). Conversation-to-cart integration is covered end to end with
+the real conversation, menu, menu-lookup and cart services and only the LLM
+faked (`workflows/conversationTurn.test.ts`): an add proposal priced from the
+menu, a deictic "add two of those" resolved through the referent the prompt
+carries, the prompt proved to contain the draft but no amount, update and remove
+matched by selection rather than line ID, clearing the draft, a change to
+something not in the draft, two matching lines refused as ambiguous, a
+cart-service refusal surfaced without losing the turn, an unavailable item never
+added, provider failure leaving the draft orderable by touch, a forbidden
+`create_order` tool changing nothing, and one session's turn never touching
+another session's draft. `routes/conversation.test.ts` covers the HTTP contract,
+including the `503` and intact touch ordering when no provider is configured.
+Plus environment/config validation, the health contract,
 correlation-ID behavior, the error envelope, and the Sarvam adapter (configuration validation, request shape, response and
 usage parsing, status-to-error mapping including 402, timeout and caller abort,
 and API-key redaction). Every adapter test drives an injected fake HTTP client
 and the global `fetch` is replaced by a spy that fails the test if a live
-request is attempted, so the suite consumes no Sarvam credits. None of the
-critical acceptance tests in section 3 are implemented yet, because the order
-lifecycle and conversation service they cover do not exist yet. Do not invent
-passing test results or arbitrary coverage thresholds. Prioritize critical
-business logic and security boundaries over a global percentage.
+request is attempted, so the suite consumes no Sarvam credits. Section 3 above
+records which critical acceptance tests are covered and which remain open;
+that list, not this paragraph, is the source of truth for status, since items
+7, 8 and 10 stay genuinely uncovered until the payment and staff-authentication
+decisions are made. Do not invent passing test results or arbitrary coverage
+thresholds. Prioritize critical business logic and security boundaries over a
+global percentage.
 
 ## 5. Completion criteria
 

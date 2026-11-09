@@ -5,15 +5,21 @@
  * never logged, never placed in a URL or QR code. Logs carry a hashed
  * reference instead, the same approach the conversation service uses.
  *
- * In memory and bounded. Persisting customer drafts is undecided
- * (docs/DATABASE.md section 2), so a restart simply ends open sessions, which
- * is safe: no order exists until a customer confirms one.
+ * This is the in-memory, single-process implementation, kept for unit tests
+ * and for running the API without a database. Production wires the
+ * MongoDB-backed implementation in `mongoOrderingSessionService.ts`, so a
+ * restart or a second instance no longer ends a customer's session
+ * (docs/DATABASE.md section 2).
+ *
+ * The interface is asynchronous because the persistent implementation is; both
+ * are bounded, and both refuse rather than evict when full.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { Channel, CreateOrderingSessionResponse } from '@vop/shared';
 import { CHANNELS } from '@vop/shared';
 import { ApiError } from '../../middleware/errors.js';
+import { hashSessionKey } from './sessionKey.js';
 
 export interface OrderingSession {
   readonly sessionId: string;
@@ -30,16 +36,18 @@ export interface OrderingSession {
 }
 
 export interface OrderingSessionService {
-  create(outletId: string, channel: Channel): CreateOrderingSessionResponse;
+  create(outletId: string, channel: Channel): Promise<CreateOrderingSessionResponse>;
   /**
    * Returns the live session, or undefined when unknown or expired.
    *
    * A successful lookup slides the idle window forward, so this is the
-   * authentication step and not a pure read.
+   * authentication step and not a pure read. The persistent implementation
+   * does the check and the slide in one conditional write, so two concurrent
+   * requests cannot revive an expired session between them.
    */
-  find(sessionId: string): OrderingSession | undefined;
-  end(sessionId: string): void;
-  size(): number;
+  find(sessionId: string): Promise<OrderingSession | undefined>;
+  end(sessionId: string): Promise<void>;
+  size(): Promise<number>;
 }
 
 /**
@@ -66,8 +74,9 @@ export const SESSION_IDLE_TTL_MS = 10 * 60 * 1000;
 
 export const DEFAULT_MAX_SESSIONS = 5000;
 
+/** The hashed reference safe to log. A prefix, never a storage key. */
 export function deriveSessionRef(sessionId: string): string {
-  return createHash('sha256').update(sessionId).digest('hex').slice(0, 12);
+  return hashSessionKey(sessionId).slice(0, 12);
 }
 
 /** Validates the request body for `POST /api/v1/ordering-sessions`. */
@@ -120,7 +129,7 @@ export function createOrderingSessionService(
   }
 
   return {
-    create(outletId, channel) {
+    async create(outletId, channel) {
       prune();
       if (sessions.size >= maxSessions) {
         // Refuse rather than evict: evicting would silently break a customer
@@ -151,7 +160,7 @@ export function createOrderingSessionService(
       };
     },
 
-    find(sessionId) {
+    async find(sessionId) {
       const session = sessions.get(sessionId);
       if (session === undefined) return undefined;
 
@@ -171,11 +180,11 @@ export function createOrderingSessionService(
       return refreshed;
     },
 
-    end(sessionId) {
+    async end(sessionId) {
       sessions.delete(sessionId);
     },
 
-    size() {
+    async size() {
       prune();
       return sessions.size;
     },
